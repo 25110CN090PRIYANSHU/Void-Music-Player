@@ -1,0 +1,22 @@
+{
+  "name": "void-yt-music",
+  "version": "2.0.0",
+  "description": "VOID YouTube Music Player",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "music",
+    "youtube",
+    "player"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  }
+}
