@@ -232,14 +232,42 @@ select:focus-visible {
   z-index: 50;
 }
 .suggestion {
+  width: 100%;
+  display: block;
+  border: 0;
+  background: transparent;
   padding: 10px 12px;
   border-radius: 7px;
   color: var(--muted);
   font-size: 12px;
+  text-align: left;
 }
 .suggestion:hover {
   background: var(--soft);
   color: var(--text);
+}
+.suggestion-heading {
+  padding: 8px 12px 5px;
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 2px;
+  font-weight: 700;
+}
+.explore-suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.explore-suggestion span {
+  color: var(--text);
+}
+.explore-suggestion small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .header-actions {
   display: flex;

@@ -883,7 +883,7 @@ function renderSearchSuggestions() {
   const q = searchInput.value.trim().toLowerCase();
   searchSuggestions.innerHTML = "";
   if (!q) {
-    searchSuggestions.classList.add("hidden");
+    renderExploreSuggestions();
     return;
   }
   const pool = [...recent, ...favorites];
@@ -913,6 +913,30 @@ function renderSearchSuggestions() {
   });
   searchSuggestions.classList.remove("hidden");
 }
+function renderExploreSuggestions() {
+  const suggestions = [
+    { label: "Trending now", query: "trending music 2026" },
+    { label: "Chill & focus", query: "lofi chill beats" },
+    { label: "Workout energy", query: "workout music mix" },
+    { label: "Pop hits", query: "popular pop songs" },
+    { label: "Bollywood hits", query: "latest Bollywood songs" },
+    { label: "Classical piano", query: "best classical piano music" },
+  ];
+  searchSuggestions.innerHTML = `<div class="suggestion-heading">EXPLORE MUSIC</div>`;
+  suggestions.forEach(({ label, query }) => {
+    const d = document.createElement("button");
+    d.className = "suggestion explore-suggestion";
+    d.type = "button";
+    d.innerHTML = `<span>${escapeHTML(label)}</span><small>${escapeHTML(query)}</small>`;
+    d.addEventListener("click", () => {
+      searchInput.value = query;
+      searchSuggestions.classList.add("hidden");
+      searchSongs();
+    });
+    searchSuggestions.appendChild(d);
+  });
+  searchSuggestions.classList.remove("hidden");
+}
 searchInput.addEventListener("input", renderSearchSuggestions);
 searchInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
@@ -930,8 +954,10 @@ document.addEventListener("click", (e) => {
 });
 
 exploreButton.addEventListener("click", () => {
+  showPage("home");
   searchInput.focus();
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  renderExploreSuggestions();
+  document.querySelector(".header").scrollIntoView({ behavior: "smooth", block: "start" });
 });
 playResultsButton.addEventListener("click", () =>
   playCollection(songs, 0, false),
