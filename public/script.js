@@ -17,6 +17,9 @@ const sectionTitle = $("sectionTitle"),
 const exploreButton = $("exploreButton"),
   themeButton = $("themeButton"),
   settingsNav = $("settingsNav");
+const mobileMenuButton = $("mobileMenuButton");
+const mobileNavOverlay = $("mobileNavOverlay");
+const mobileSidebar = document.querySelector(".sidebar");
 const playResultsButton = $("playResultsButton"),
   shuffleResultsButton = $("shuffleResultsButton");
 const playButton = $("playButton"),
@@ -871,6 +874,7 @@ function showPage(page) {
   if (page === "playlists") renderPlaylists();
   if (page === "home") {
   }
+  closeMobileMenu();
 }
 document
   .querySelectorAll(".nav-item[data-page]")
@@ -878,6 +882,25 @@ document
     btn.addEventListener("click", () => showPage(btn.dataset.page)),
   );
 settingsNav.addEventListener("click", () => showPage("settings"));
+
+function openMobileMenu() {
+  mobileSidebar.classList.add("mobile-open");
+  mobileNavOverlay.classList.add("open");
+  mobileMenuButton.setAttribute("aria-expanded", "true");
+  document.body.classList.add("menu-open");
+}
+function closeMobileMenu() {
+  mobileSidebar.classList.remove("mobile-open");
+  mobileNavOverlay.classList.remove("open");
+  mobileMenuButton.setAttribute("aria-expanded", "false");
+  document.body.classList.remove("menu-open");
+}
+mobileMenuButton.addEventListener("click", () => {
+  mobileSidebar.classList.contains("mobile-open")
+    ? closeMobileMenu()
+    : openMobileMenu();
+});
+mobileNavOverlay.addEventListener("click", closeMobileMenu);
 
 function renderSearchSuggestions() {
   const q = searchInput.value.trim().toLowerCase();
@@ -1032,11 +1055,13 @@ function openLyrics() {
 $("lyricsButton").addEventListener("click", openLyrics);
 document.querySelectorAll(".progress-container").forEach((container) => {
   container.addEventListener("click", (event) => {
-    // Keep the range input available for normal seeking.
-    if (event.target.closest("input")) return;
+    if (event.target.closest("button")) return;
     openLyrics();
   });
 });
+// A tap on the actual range track should also open lyrics. Dragging still
+// updates and seeks through the existing input/change handlers.
+progress.addEventListener("click", openLyrics);
 $("modalQueueButton").addEventListener("click", () => {
   closeAllModals();
   openQueue();
