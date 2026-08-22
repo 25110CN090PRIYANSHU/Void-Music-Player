@@ -69,6 +69,14 @@ const addToPlaylistModal = $("addToPlaylistModal"),
   playlistChoices = $("playlistChoices");
 const shortcutsModal = $("shortcutsModal");
 
+async function logout() {
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } finally {
+    window.location.href = "/login.html";
+  }
+}
+
 let songs = [];
 let currentIndex = -1;
 let currentSong = null;
@@ -1019,6 +1027,7 @@ $("clearFavoritesButton").addEventListener("click", () => {
     showToast("Favorites cleared");
   }
 });
+$("profileButton").addEventListener("click", logout);
 $("resetAppButton").addEventListener("click", () => {
   if (!confirm("Reset all local VOID data?")) return;
   [

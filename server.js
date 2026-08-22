@@ -1,20 +1,129 @@
 const express = require("express");
 const path = require("path");
 const dotenv = require("dotenv");
+const fs = require("fs");
+const crypto = require("crypto");
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const publicDir = path.join(__dirname, "public");
+const dataDir = path.join(__dirname, "data");
+const usersFile = path.join(dataDir, "users.json");
+const sessions = new Map();
 
 app.use(express.json({ limit: "1mb" }));
 
-// Serve frontend files from public folder
-app.use(express.static(path.join(__dirname, "public")));
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+if (!fs.existsSync(usersFile)) fs.writeFileSync(usersFile, "[]");
+
+function readUsers() {
+    try {
+        return JSON.parse(fs.readFileSync(usersFile, "utf8"));
+    } catch {
+        return [];
+    }
+}
+
+function writeUsers(users) {
+    fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
+}
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
+    const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+    return { salt, hash };
+}
+
+function passwordsMatch(password, user) {
+    const hash = crypto.scryptSync(password, user.salt, 64).toString("hex");
+    return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(user.hash, "hex"));
+}
+
+function createSession(user) {
+    const token = crypto.randomBytes(32).toString("hex");
+    sessions.set(token, { id: user.id, email: user.email, expires: Date.now() + 1000 * 60 * 60 * 24 * 7 });
+    return token;
+}
+
+function setSessionCookie(res, token) {
+    res.setHeader("Set-Cookie", `void_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800`);
+}
+
+function sessionFromRequest(req) {
+    const cookies = Object.fromEntries(
+        (req.headers.cookie || "").split(";").filter(Boolean).map((part) => {
+            const [key, ...value] = part.trim().split("=");
+            return [key, value.join("=")];
+        }),
+    );
+    const session = sessions.get(cookies.void_session);
+    if (!session || session.expires < Date.now()) {
+        if (cookies.void_session) sessions.delete(cookies.void_session);
+        return null;
+    }
+    return session;
+}
+
+function requireAuth(req, res, next) {
+    const session = sessionFromRequest(req);
+    if (!session) return res.status(401).json({ error: "Please log in to continue." });
+    req.user = session;
+    next();
+}
+
+// Login assets and auth endpoints remain public.
+app.get("/login.html", (req, res) => res.sendFile(path.join(publicDir, "login.html")));
+app.get("/auth.css", (req, res) => res.sendFile(path.join(publicDir, "auth.css")));
+app.get("/auth.js", (req, res) => res.sendFile(path.join(publicDir, "auth.js")));
+
+app.post("/api/auth/register", (req, res) => {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+        return res.status(400).json({ error: "Enter a valid email address." });
+    if (password.length < 6)
+        return res.status(400).json({ error: "Password must be at least 6 characters." });
+    const users = readUsers();
+    if (users.some((user) => user.email === email))
+        return res.status(409).json({ error: "An account with that email already exists." });
+    const credentials = hashPassword(password);
+    const user = { id: crypto.randomUUID(), email, ...credentials, createdAt: new Date().toISOString() };
+    users.push(user);
+    writeUsers(users);
+    const token = createSession(user);
+    setSessionCookie(res, token);
+    res.json({ user: { id: user.id, email: user.email } });
+});
+
+app.post("/api/auth/login", (req, res) => {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+    const user = readUsers().find((candidate) => candidate.email === email);
+    if (!user || !passwordsMatch(password, user))
+        return res.status(401).json({ error: "Email or password is incorrect." });
+    const token = createSession(user);
+    setSessionCookie(res, token);
+    res.json({ user: { id: user.id, email: user.email } });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+    const token = (req.headers.cookie || "").match(/(?:^|;\s*)void_session=([^;]+)/)?.[1];
+    if (token) sessions.delete(token);
+    res.setHeader("Set-Cookie", "void_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
+    res.json({ ok: true });
+});
+
+app.get("/api/auth/me", (req, res) => {
+    const session = sessionFromRequest(req);
+    if (!session) return res.status(401).json({ error: "Not logged in." });
+    res.json({ user: { id: session.id, email: session.email } });
+});
 
 // Explicit homepage route
 app.get("/", (req, res) => {
-    res.sendFile(path.join(__dirname, "public", "index.html"));
+    if (!sessionFromRequest(req)) return res.redirect("/login.html");
+    res.sendFile(path.join(publicDir, "index.html"));
 });
 
 // Health check
@@ -26,7 +135,7 @@ app.get("/api/health", (req, res) => {
 });
 
 // YouTube search
-app.get("/api/search", async (req, res) => {
+app.get("/api/search", requireAuth, async (req, res) => {
     try {
         const query = String(req.query.q || "").trim();
 
@@ -102,6 +211,9 @@ app.get("/api/search", async (req, res) => {
         });
     }
 });
+
+// Serve the player only after authentication.
+app.use(requireAuth, express.static(publicDir));
 
 // Start server
 app.listen(PORT, "0.0.0.0", () => {
