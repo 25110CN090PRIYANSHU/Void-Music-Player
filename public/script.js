@@ -1053,15 +1053,6 @@ function openLyrics() {
   lyricsModal.classList.remove("hidden");
 }
 $("lyricsButton").addEventListener("click", openLyrics);
-document.querySelectorAll(".progress-container").forEach((container) => {
-  container.addEventListener("click", (event) => {
-    if (event.target.closest("button")) return;
-    openLyrics();
-  });
-});
-// A tap on the actual range track should also open lyrics. Dragging still
-// updates and seeks through the existing input/change handlers.
-progress.addEventListener("click", openLyrics);
 $("modalQueueButton").addEventListener("click", () => {
   closeAllModals();
   openQueue();
