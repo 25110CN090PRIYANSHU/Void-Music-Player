@@ -310,6 +310,11 @@ function handlePlayerState(event) {
       setPlayingUI(true);
       startProgressUpdater();
       break;
+    case YT.PlayerState.BUFFERING:
+      // Keep the clock alive while YouTube is buffering; the API can expose
+      // advancing time before it sends PLAYING again.
+      startProgressUpdater();
+      break;
     case YT.PlayerState.PAUSED:
       setPlayingUI(false);
       stopProgressUpdater();
@@ -351,6 +356,7 @@ function setPlayingUI(playing) {
 }
 function handlePlayerError(event) {
   console.error("YouTube player error:", event.data);
+  stopProgressUpdater();
   showError("This video cannot be played. Try another result.");
   setPlayingUI(false);
 }
@@ -371,7 +377,6 @@ async function searchSongs() {
     songs = data.results || [];
     activeCollection = "search";
     currentIndex = -1;
-    currentSong = null;
     sectionLabel.textContent = "SEARCH RESULTS";
     sectionTitle.textContent = `Results for "${query}"`;
     resultActions.classList.toggle("hidden", !songs.length);
@@ -436,6 +441,8 @@ function playSong(index) {
   modalThumbnail.src = currentSong.thumbnail;
   progress.value = 0;
   modalProgress.value = 0;
+  setRangeProgress(progress, 0);
+  setRangeProgress(modalProgress, 0);
   currentTime.textContent = "0:00";
   modalCurrent.textContent = "0:00";
   duration.textContent = "0:00";
@@ -444,6 +451,8 @@ function playSong(index) {
   addRecent(currentSong);
   player.loadVideoById(currentSong.id);
   setPlayingUI(true);
+  // YouTube may emit PLAYING before duration metadata is available.
+  startProgressUpdater();
 }
 function playCurrent() {
   if (currentIndex === -1) {
@@ -577,6 +586,7 @@ function changeVolume(amount) {
 
 function startProgressUpdater() {
   stopProgressUpdater();
+  updateProgress();
   progressTimer = setInterval(updateProgress, 400);
 }
 function stopProgressUpdater() {
@@ -586,27 +596,32 @@ function stopProgressUpdater() {
   }
 }
 function updateProgress() {
-  if (!playerReady || currentIndex === -1) return;
-  const total = player.getDuration(),
-    cur = player.getCurrentTime();
-  if (!total) return;
-  const pct = (cur / total) * 100;
+  if (!playerReady || !currentSong) return;
+  let total = 0;
+  let cur = 0;
+  try {
+    total = Number(player.getDuration()) || 0;
+    cur = Number(player.getCurrentTime()) || 0;
+  } catch {
+    return;
+  }
+  if (!total || !Number.isFinite(total)) return;
+  const pct = Math.min(100, Math.max(0, (cur / total) * 100));
   progress.value = pct;
 
-  progress.style.background = `
-    linear-gradient(
-        to right,
-        #ffffff 0%,
-        #ffffff ${pct}%,
-        #333333 ${pct}%,
-        #333333 100%
-    )
-`;
   modalProgress.value = pct;
+  setRangeProgress(progress, pct);
+  setRangeProgress(modalProgress, pct);
   currentTime.textContent = formatTime(cur);
   duration.textContent = formatTime(total);
   modalCurrent.textContent = formatTime(cur);
   modalDuration.textContent = formatTime(total);
+}
+function setRangeProgress(range, pct) {
+  if (!range) return;
+  const active =
+    getComputedStyle(document.body).getPropertyValue("--text").trim() || "#fff";
+  range.style.background = `linear-gradient(to right, ${active} 0%, ${active} ${pct}%, #333 ${pct}%, #333 100%)`;
 }
 function seekFromRange(value) {
   if (!playerReady || currentIndex === -1) return;
@@ -619,6 +634,7 @@ progress.addEventListener("input", () => {
     if (total) {
       const t = (Number(progress.value) / 100) * total;
       currentTime.textContent = formatTime(t);
+      setRangeProgress(progress, Number(progress.value));
     }
   }
 });
@@ -626,6 +642,8 @@ progress.addEventListener("change", () => seekFromRange(progress.value));
 modalProgress.addEventListener("input", () => {
   modalProgress.value = progress.value;
   progress.value = modalProgress.value;
+  setRangeProgress(progress, Number(progress.value));
+  setRangeProgress(modalProgress, Number(modalProgress.value));
   const total = playerReady ? player.getDuration() : 0;
   if (total)
     modalCurrent.textContent = formatTime(

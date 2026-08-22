@@ -265,6 +265,7 @@ select:focus-visible {
 }
 .mobile-logo {
   display: none;
+  flex-shrink: 0;
 }
 .content {
   padding: 30px 35px;
@@ -1325,7 +1326,9 @@ input[type="range"]::-moz-range-thumb {
     gap: 15px;
   }
   .search-container {
-    width: 100%;
+    width: auto;
+    min-width: 0;
+    flex: 1;
   }
   .header-actions {
     display: none;
@@ -1342,7 +1345,7 @@ input[type="range"]::-moz-range-thumb {
   }
   .player {
     height: 125px;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
   .player-center {
     grid-column: 1/-1;
@@ -1363,6 +1366,26 @@ input[type="range"]::-moz-range-thumb {
   }
 }
 @media (max-width: 600px) {
+  .header {
+    height: 68px;
+    padding: 0 10px;
+    gap: 8px;
+  }
+  .mobile-logo {
+    font-size: 13px;
+    letter-spacing: 2px;
+  }
+  .search-container {
+    height: 40px;
+  }
+  .search-container input {
+    min-width: 0;
+    padding: 0 7px;
+    font-size: 12px;
+  }
+  .search-icon {
+    font-size: 19px;
+  }
   .hero h1 {
     font-size: 40px;
   }
@@ -1371,6 +1394,7 @@ input[type="range"]::-moz-range-thumb {
     gap: 10px;
   }
   .player {
+    height: 132px;
     padding: 8px 12px;
   }
   .now-playing img {
@@ -1379,6 +1403,32 @@ input[type="range"]::-moz-range-thumb {
   }
   .player-heart {
     font-size: 19px;
+  }
+  .player-controls {
+    gap: 12px;
+  }
+  .player-controls .control {
+    font-size: 15px;
+  }
+  .player-center {
+    width: 100%;
+  }
+  .progress-container {
+    max-width: none;
+    gap: 5px;
+  }
+  .progress-container span {
+    min-width: 28px;
+    font-size: 8px;
+  }
+  .now-playing {
+    gap: 8px;
+  }
+  .player-info strong {
+    font-size: 12px;
+  }
+  .player-info span {
+    font-size: 10px;
   }
   .queue-panel {
     width: 100%;
