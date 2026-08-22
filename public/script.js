@@ -1026,9 +1026,17 @@ function openLyrics() {
   lyricsText.textContent = currentSong
     ? `Lyrics for "${cleanTitle(currentSong.title)}" are not automatically fetched by this build. Use the official YouTube video or connect a licensed lyrics provider.`
     : "Play a song first.";
+  lyricsModal.classList.add("lyrics-fullscreen");
   lyricsModal.classList.remove("hidden");
 }
 $("lyricsButton").addEventListener("click", openLyrics);
+document.querySelectorAll(".progress-container").forEach((container) => {
+  container.addEventListener("click", (event) => {
+    // Keep the range input available for normal seeking.
+    if (event.target.closest("input")) return;
+    openLyrics();
+  });
+});
 $("modalQueueButton").addEventListener("click", () => {
   closeAllModals();
   openQueue();
