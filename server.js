@@ -36,8 +36,15 @@ function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
 }
 
 function passwordsMatch(password, user) {
-    const hash = crypto.scryptSync(password, user.salt, 64).toString("hex");
-    return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(user.hash, "hex"));
+    try {
+        if (!user?.salt || !user?.hash) return false;
+        const hash = crypto.scryptSync(password, user.salt, 64).toString("hex");
+        const expected = Buffer.from(user.hash, "hex");
+        const actual = Buffer.from(hash, "hex");
+        return expected.length === actual.length && crypto.timingSafeEqual(actual, expected);
+    } catch {
+        return false;
+    }
 }
 
 function createSession(user) {
@@ -79,7 +86,10 @@ app.get("/auth.js", (req, res) => res.sendFile(path.join(publicDir, "auth.js")))
 
 app.post("/api/auth/register", (req, res) => {
     const email = String(req.body.email || "").trim().toLowerCase();
+    const name = String(req.body.name || "").trim();
     const password = String(req.body.password || "");
+    if (name.length < 2 || name.length > 50)
+        return res.status(400).json({ error: "Enter your name (2–50 characters)." });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
         return res.status(400).json({ error: "Enter a valid email address." });
     if (password.length < 6)
@@ -88,12 +98,12 @@ app.post("/api/auth/register", (req, res) => {
     if (users.some((user) => user.email === email))
         return res.status(409).json({ error: "An account with that email already exists." });
     const credentials = hashPassword(password);
-    const user = { id: crypto.randomUUID(), email, ...credentials, createdAt: new Date().toISOString() };
+    const user = { id: crypto.randomUUID(), name, email, ...credentials, createdAt: new Date().toISOString() };
     users.push(user);
     writeUsers(users);
     const token = createSession(user);
     setSessionCookie(res, token);
-    res.json({ user: { id: user.id, email: user.email } });
+    res.json({ user: { id: user.id, name: user.name, email: user.email } });
 });
 
 app.post("/api/auth/login", (req, res) => {
@@ -104,7 +114,7 @@ app.post("/api/auth/login", (req, res) => {
         return res.status(401).json({ error: "Email or password is incorrect." });
     const token = createSession(user);
     setSessionCookie(res, token);
-    res.json({ user: { id: user.id, email: user.email } });
+    res.json({ user: { id: user.id, name: user.name || user.email.split("@")[0], email: user.email } });
 });
 
 app.post("/api/auth/logout", (req, res) => {
@@ -117,7 +127,8 @@ app.post("/api/auth/logout", (req, res) => {
 app.get("/api/auth/me", (req, res) => {
     const session = sessionFromRequest(req);
     if (!session) return res.status(401).json({ error: "Not logged in." });
-    res.json({ user: { id: session.id, email: session.email } });
+    const user = readUsers().find((candidate) => candidate.id === session.id);
+    res.json({ user: { id: session.id, name: user?.name || session.email.split("@")[0], email: session.email } });
 });
 
 // Explicit homepage route

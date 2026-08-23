@@ -77,8 +77,8 @@
             <button id="themeButton" class="icon-button" title="Toggle theme">
               ◐
             </button>
-            <button id="profileButton" class="profile-button" title="Profile">
-              P
+            <button id="profileButton" class="profile-button" title="Profile" aria-expanded="false">
+              <span id="profileInitial">P</span>
             </button>
           </div>
         </header>
@@ -93,9 +93,6 @@
                   Search YouTube, build your library, manage queues and
                   playlists, and control playback from one place.
                 </p>
-                <button id="exploreButton" class="primary-button">
-                  Explore Music <span>→</span>
-                </button>
               </div>
               <div class="hero-visual">
                 <div class="orb orb-1"></div>
@@ -394,6 +391,15 @@
     </div>
 
     <div id="toastContainer" class="toast-container"></div>
+    <div id="profileMenu" class="profile-menu hidden">
+      <div class="profile-summary">
+        <div id="profileAvatarLarge" class="profile-avatar-large">P</div>
+        <div><strong id="profileName">Profile</strong><small id="profileEmail"></small></div>
+      </div>
+      <label class="avatar-upload" for="avatarInput">Change profile picture</label>
+      <input id="avatarInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
+      <button id="logoutButton" class="profile-logout">Log out</button>
+    </div>
 
     <div id="playlistModal" class="modal hidden">
       <div class="modal-backdrop" data-close-modal></div>

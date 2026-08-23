@@ -14,8 +14,7 @@ const resultsContainer = $("results"),
 const sectionTitle = $("sectionTitle"),
   sectionLabel = $("sectionLabel"),
   resultActions = $("resultActions");
-const exploreButton = $("exploreButton"),
-  themeButton = $("themeButton"),
+const themeButton = $("themeButton"),
   settingsNav = $("settingsNav");
 const mobileMenuButton = $("mobileMenuButton");
 const mobileNavOverlay = $("mobileNavOverlay");
@@ -71,6 +70,13 @@ const addToPlaylistModal = $("addToPlaylistModal"),
   addPlaylistSongTitle = $("addPlaylistSongTitle"),
   playlistChoices = $("playlistChoices");
 const shortcutsModal = $("shortcutsModal");
+const profileMenu = $("profileMenu"),
+  profileInitial = $("profileInitial"),
+  profileAvatarLarge = $("profileAvatarLarge"),
+  profileName = $("profileName"),
+  profileEmail = $("profileEmail"),
+  avatarInput = $("avatarInput"),
+  logoutButton = $("logoutButton");
 
 async function logout() {
   try {
@@ -97,6 +103,7 @@ let activeContextSong = null;
 let queue = load("voidQueue", []);
 let favorites = load("voidFavorites", []);
 let recent = load("voidRecent", []);
+let searchHistory = load("voidSearchHistory", []);
 let playlists = load("voidPlaylists", {});
 let settings = Object.assign(
   { theme: "dark", autoplayQueue: true, rememberVolume: true },
@@ -112,6 +119,33 @@ function load(key, fallback) {
 }
 function save(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+function userInitial(name = "P") {
+  return name.trim().split(/\s+/)[0]?.charAt(0).toUpperCase() || "P";
+}
+function updateProfileUI(user) {
+  if (!user) return;
+  const initial = userInitial(user.name || user.email);
+  profileInitial.textContent = initial;
+  profileAvatarLarge.textContent = initial;
+  profileName.textContent = user.name || user.email.split("@")[0];
+  profileEmail.textContent = user.email;
+  const image = localStorage.getItem(`voidProfileImage:${user.id}`);
+  [profileInitial, profileAvatarLarge].forEach((el) => {
+    el.style.backgroundImage = image ? `url("${image}")` : "";
+    el.classList.toggle("has-image", Boolean(image));
+  });
+}
+async function loadProfile() {
+  try {
+    const response = await fetch("/api/auth/me");
+    if (!response.ok) return;
+    const data = await response.json();
+    localStorage.setItem("voidUser", JSON.stringify(data.user));
+    updateProfileUI(data.user);
+  } catch {
+    try { updateProfileUI(JSON.parse(localStorage.getItem("voidUser"))); } catch {}
+  }
 }
 function escapeHTML(v) {
   const d = document.createElement("div");
@@ -385,6 +419,11 @@ async function searchSongs() {
     const r = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || "Search failed");
+    searchHistory = [
+      query,
+      ...searchHistory.filter((item) => item.toLowerCase() !== query.toLowerCase()),
+    ].slice(0, 8);
+    save("voidSearchHistory", searchHistory);
     songs = data.results || [];
     activeCollection = "search";
     currentIndex = -1;
@@ -906,12 +945,18 @@ function renderSearchSuggestions() {
   const q = searchInput.value.trim().toLowerCase();
   searchSuggestions.innerHTML = "";
   if (!q) {
-    renderExploreSuggestions();
+    renderSearchHistorySuggestions();
     return;
   }
   const pool = [...recent, ...favorites];
   const seen = new Set();
   const matches = [];
+  searchHistory.forEach((query) => {
+    if (query.toLowerCase().includes(q) && !seen.has(query)) {
+      seen.add(query);
+      matches.push({ title: query, channel: "Search history", historyQuery: query });
+    }
+  });
   pool.forEach((s) => {
     const t = `${s.title} ${s.channel}`.toLowerCase();
     if (t.includes(q) && !seen.has(s.title)) {
@@ -928,7 +973,7 @@ function renderSearchSuggestions() {
     d.className = "suggestion";
     d.textContent = `${cleanTitle(s.title)} — ${s.channel}`;
     d.addEventListener("click", () => {
-      searchInput.value = cleanTitle(s.title);
+      searchInput.value = s.historyQuery || cleanTitle(s.title);
       searchSuggestions.classList.add("hidden");
       searchSongs();
     });
@@ -936,21 +981,17 @@ function renderSearchSuggestions() {
   });
   searchSuggestions.classList.remove("hidden");
 }
-function renderExploreSuggestions() {
-  const suggestions = [
-    { label: "Trending now", query: "trending music 2026" },
-    { label: "Chill & focus", query: "lofi chill beats" },
-    { label: "Workout energy", query: "workout music mix" },
-    { label: "Pop hits", query: "popular pop songs" },
-    { label: "Bollywood hits", query: "latest Bollywood songs" },
-    { label: "Classical piano", query: "best classical piano music" },
-  ];
-  searchSuggestions.innerHTML = `<div class="suggestion-heading">EXPLORE MUSIC</div>`;
-  suggestions.forEach(({ label, query }) => {
+function renderSearchHistorySuggestions() {
+  if (!searchHistory.length) {
+    searchSuggestions.classList.add("hidden");
+    return;
+  }
+  searchSuggestions.innerHTML = "";
+  searchHistory.slice(0, 5).forEach((query) => {
     const d = document.createElement("button");
-    d.className = "suggestion explore-suggestion";
+    d.className = "suggestion explore-suggestion history-suggestion";
     d.type = "button";
-    d.innerHTML = `<span>${escapeHTML(label)}</span><small>${escapeHTML(query)}</small>`;
+    d.innerHTML = `<span>◷ ${escapeHTML(query)}</span><small>Search again</small>`;
     d.addEventListener("click", () => {
       searchInput.value = query;
       searchSuggestions.classList.add("hidden");
@@ -958,9 +999,14 @@ function renderExploreSuggestions() {
     });
     searchSuggestions.appendChild(d);
   });
+  const heading = document.createElement("div");
+  heading.className = "suggestion-heading";
+  heading.textContent = "SEARCH HISTORY";
+  searchSuggestions.prepend(heading);
   searchSuggestions.classList.remove("hidden");
 }
 searchInput.addEventListener("input", renderSearchSuggestions);
+searchInput.addEventListener("focus", renderSearchSuggestions);
 searchInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     searchSuggestions.classList.add("hidden");
@@ -976,12 +1022,6 @@ document.addEventListener("click", (e) => {
     searchSuggestions.classList.add("hidden");
 });
 
-exploreButton.addEventListener("click", () => {
-  showPage("home");
-  searchInput.focus();
-  renderExploreSuggestions();
-  document.querySelector(".header").scrollIntoView({ behavior: "smooth", block: "start" });
-});
 playResultsButton.addEventListener("click", () =>
   playCollection(songs, 0, false),
 );
@@ -1077,7 +1117,36 @@ $("clearFavoritesButton").addEventListener("click", () => {
     showToast("Favorites cleared");
   }
 });
-$("profileButton").addEventListener("click", logout);
+$("profileButton").addEventListener("click", (event) => {
+  event.stopPropagation();
+  profileMenu.classList.toggle("hidden");
+  $("profileButton").setAttribute(
+    "aria-expanded",
+    String(!profileMenu.classList.contains("hidden")),
+  );
+});
+avatarInput.addEventListener("change", () => {
+  const file = avatarInput.files?.[0];
+  let user;
+  try {
+    user = JSON.parse(localStorage.getItem("voidUser"));
+  } catch {}
+  if (!file || !user) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    localStorage.setItem(`voidProfileImage:${user.id}`, reader.result);
+    updateProfileUI(user);
+    showToast("Profile picture updated");
+  };
+  reader.readAsDataURL(file);
+});
+logoutButton.addEventListener("click", logout);
+document.addEventListener("click", (event) => {
+  if (!event.target.closest("#profileMenu") && !event.target.closest("#profileButton")) {
+    profileMenu.classList.add("hidden");
+    $("profileButton").setAttribute("aria-expanded", "false");
+  }
+});
 $("resetAppButton").addEventListener("click", () => {
   if (!confirm("Reset all local VOID data?")) return;
   [
@@ -1163,4 +1232,5 @@ renderQueuePage();
 renderPlaylists();
 initSettings();
 updateMuteIcon();
+loadProfile();
 console.log("VOID Music Player — MAX edition loaded.");
