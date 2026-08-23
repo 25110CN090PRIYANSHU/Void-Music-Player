@@ -457,6 +457,7 @@ function createSongCard(song, index) {
       <div class="card-actions">
         <button class="card-action favorite-card-action ${isFavorite(song) ? "favorited" : ""}" title="Favorite">${isFavorite(song) ? "♥" : "♡"}</button>
         <button class="card-action queue-card-action" title="Add to queue">＋</button>
+        <button class="card-action playlist-card-action" title="Add to playlist">▣</button>
       </div>
       <div class="song-info"><div class="song-title">${escapeHTML(cleanTitle(song.title))}</div><span class="song-channel">${escapeHTML(song.channel)}</span></div>`;
   card.addEventListener("click", () => playSong(index));
@@ -472,6 +473,10 @@ function createSongCard(song, index) {
   card.querySelector(".queue-card-action").addEventListener("click", (e) => {
     e.stopPropagation();
     addToQueue(song);
+  });
+  card.querySelector(".playlist-card-action").addEventListener("click", (e) => {
+    e.stopPropagation();
+    openAddToPlaylist(song);
   });
   return card;
 }
@@ -778,13 +783,16 @@ function renderLibraryList(
   items.forEach((song, i) => {
     const row = document.createElement("div");
     row.className = "library-row";
-    row.innerHTML = `<span class="row-number">${i + 1}</span><img class="row-thumb" src="${escapeHTML(song.thumbnail)}" alt=""><div class="row-main"><div class="row-title">${escapeHTML(cleanTitle(song.title))}</div><div class="row-sub">${escapeHTML(song.channel)}</div></div><div class="row-actions"><button class="row-action play-row" title="Play">▶</button><button class="row-action queue-row-btn" title="Queue">＋</button>${allowRemove ? '<button class="row-action remove-row" title="Remove">×</button>' : ""}</div>`;
+    row.innerHTML = `<span class="row-number">${i + 1}</span><img class="row-thumb" src="${escapeHTML(song.thumbnail)}" alt=""><div class="row-main"><div class="row-title">${escapeHTML(cleanTitle(song.title))}</div><div class="row-sub">${escapeHTML(song.channel)}</div></div><div class="row-actions"><button class="row-action play-row" title="Play">▶</button><button class="row-action queue-row-btn" title="Queue">＋</button><button class="row-action playlist-row-btn" title="Add to playlist">▣</button>${allowRemove ? '<button class="row-action remove-row" title="Remove">×</button>' : ""}</div>`;
     row
       .querySelector(".play-row")
       .addEventListener("click", () => playCollection(items, i));
     row
       .querySelector(".queue-row-btn")
       .addEventListener("click", () => addToQueue(song));
+    row
+      .querySelector(".playlist-row-btn")
+      .addEventListener("click", () => openAddToPlaylist(song));
     if (allowRemove)
       row.querySelector(".remove-row").addEventListener("click", () => {
         removeLibraryItem(container, song);
@@ -801,6 +809,12 @@ function removeLibraryItem(container, song) {
     renderRecent();
     showToast("Removed from history");
   }
+}
+function removeSearchHistory(query) {
+  searchHistory = searchHistory.filter((item) => item !== query);
+  save("voidSearchHistory", searchHistory);
+  renderSearchSuggestions();
+  showToast("Search removed");
 }
 function renderFavorites() {
   $("favoritesSubtitle").textContent =
@@ -965,14 +979,40 @@ function renderSearchSuggestions() {
       matches.push(s);
     }
   });
+  [
+    ["Bollywood songs", "latest Bollywood songs"],
+    ["Hindi songs", "latest Hindi songs"],
+    ["English pop", "popular English pop songs"],
+    ["Lo-fi music", "lofi chill beats"],
+    ["Workout music", "workout music mix"],
+    ["Devotional music", "latest devotional songs"],
+    ["Hip-hop and rap", "best hip hop rap songs"],
+    ["Classical piano", "best classical piano music"],
+  ].forEach(([label, query]) => {
+    if (label.toLowerCase().includes(q) && !matches.some((item) => item.historyQuery === query)) {
+      matches.push({ title: label, channel: "Suggested search", historyQuery: query, keywordSuggestion: true });
+    }
+  });
   if (!matches.length) {
     searchSuggestions.classList.add("hidden");
     return;
   }
   matches.slice(0, 6).forEach((s) => {
     const d = document.createElement("div");
-    d.className = `suggestion${s.historyQuery ? " history-suggestion" : ""}`;
-    d.textContent = `${cleanTitle(s.title)} — ${s.channel}`;
+    d.className = `suggestion${s.historyQuery && !s.keywordSuggestion ? " history-suggestion" : ""}`;
+    if (s.historyQuery) {
+      if (s.keywordSuggestion) {
+        d.textContent = `⌕ ${s.title}`;
+      } else {
+        d.innerHTML = `<span>◷ ${escapeHTML(s.historyQuery)}</span><button class="history-delete" type="button" aria-label="Delete search">×</button>`;
+        d.querySelector(".history-delete").addEventListener("click", (event) => {
+          event.stopPropagation();
+          removeSearchHistory(s.historyQuery);
+        });
+      }
+    } else {
+      d.textContent = `${cleanTitle(s.title)} — ${s.channel}`;
+    }
     d.addEventListener("click", () => {
       searchInput.value = s.historyQuery || cleanTitle(s.title);
       searchSuggestions.classList.add("hidden");
@@ -989,14 +1029,22 @@ function renderSearchHistorySuggestions() {
   }
   searchSuggestions.innerHTML = "";
   searchHistory.slice(0, 5).forEach((query) => {
-    const d = document.createElement("button");
+    const d = document.createElement("div");
     d.className = "suggestion history-suggestion";
-    d.type = "button";
-    d.innerHTML = `<span>◷ ${escapeHTML(query)}</span><small>Search again</small>`;
+    d.setAttribute("role", "button");
+    d.tabIndex = 0;
+    d.innerHTML = `<span>◷ ${escapeHTML(query)}</span><button class="history-delete" type="button" aria-label="Delete search">×</button>`;
+    d.querySelector(".history-delete").addEventListener("click", (event) => {
+      event.stopPropagation();
+      removeSearchHistory(query);
+    });
     d.addEventListener("click", () => {
       searchInput.value = query;
       searchSuggestions.classList.add("hidden");
       searchSongs();
+    });
+    d.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") d.click();
     });
     searchSuggestions.appendChild(d);
   });

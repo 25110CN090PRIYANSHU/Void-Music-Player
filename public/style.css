@@ -259,6 +259,29 @@ select:focus-visible {
 .history-suggestion span {
   color: var(--text) !important;
 }
+.history-suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.history-delete {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.history-delete:hover {
+  background: var(--soft);
+  color: var(--text);
+}
 .suggestion-heading {
   background: var(--card);
   padding: 8px 12px 5px;
@@ -1632,6 +1655,10 @@ input[type="range"]::-moz-range-thumb {
   }
   .player-info span {
     font-size: 10px;
+  }
+  .card-actions {
+    opacity: 1;
+    transform: none;
   }
   .queue-panel {
     width: 100%;
