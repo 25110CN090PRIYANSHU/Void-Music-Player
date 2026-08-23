@@ -971,7 +971,7 @@ function renderSearchSuggestions() {
   }
   matches.slice(0, 6).forEach((s) => {
     const d = document.createElement("div");
-    d.className = "suggestion";
+    d.className = `suggestion${s.historyQuery ? " history-suggestion" : ""}`;
     d.textContent = `${cleanTitle(s.title)} — ${s.channel}`;
     d.addEventListener("click", () => {
       searchInput.value = s.historyQuery || cleanTitle(s.title);
@@ -990,7 +990,7 @@ function renderSearchHistorySuggestions() {
   searchSuggestions.innerHTML = "";
   searchHistory.slice(0, 5).forEach((query) => {
     const d = document.createElement("button");
-    d.className = "suggestion explore-suggestion history-suggestion";
+    d.className = "suggestion history-suggestion";
     d.type = "button";
     d.innerHTML = `<span>◷ ${escapeHTML(query)}</span><small>Search again</small>`;
     d.addEventListener("click", () => {

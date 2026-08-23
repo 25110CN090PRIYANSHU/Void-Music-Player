@@ -248,6 +248,17 @@ select:focus-visible {
   background: var(--soft);
   color: var(--text);
 }
+.history-suggestion,
+.history-suggestion:hover,
+.history-suggestion:focus {
+  background: var(--card) !important;
+  color: var(--text) !important;
+  opacity: 1 !important;
+  text-shadow: none;
+}
+.history-suggestion span {
+  color: var(--text) !important;
+}
 .suggestion-heading {
   background: var(--card);
   padding: 8px 12px 5px;
