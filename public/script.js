@@ -14,7 +14,8 @@ const resultsContainer = $("results"),
 const sectionTitle = $("sectionTitle"),
   sectionLabel = $("sectionLabel"),
   resultActions = $("resultActions");
-const themeButton = $("themeButton"),
+const exploreButton = $("exploreButton"),
+  themeButton = $("themeButton"),
   settingsNav = $("settingsNav");
 const mobileMenuButton = $("mobileMenuButton");
 const mobileNavOverlay = $("mobileNavOverlay");
@@ -1005,6 +1006,45 @@ function renderSearchHistorySuggestions() {
   searchSuggestions.prepend(heading);
   searchSuggestions.classList.remove("hidden");
 }
+function getListeningTypes() {
+  const text = [...searchHistory, ...recent.map((song) => `${song.title} ${song.channel}`)]
+    .join(" ")
+    .toLowerCase();
+  const types = [
+    ["Bollywood", "latest Bollywood songs", /bollywood|hindi|tollywood|tamil|telugu/gi],
+    ["Pop", "popular pop songs", /pop|hits|top 50/gi],
+    ["Lo-fi & chill", "lofi chill beats", /lofi|lo-fi|chill|study|focus/gi],
+    ["Workout", "workout music mix", /workout|gym|fitness|motivation/gi],
+    ["Devotional", "devotional music", /bhajan|devotional|mantra|qawwali|spiritual/gi],
+    ["Hip-hop & rap", "hip hop rap songs", /hip.?hop|rap|trap|eminem/gi],
+    ["Rock", "best rock songs", /rock|metal|punk/gi],
+    ["Classical", "best classical piano music", /classical|piano|orchestra/gi],
+  ];
+  const ranked = types
+    .map(([label, query, pattern]) => ({ label, query, score: (text.match(pattern) || []).length }))
+    .sort((a, b) => b.score - a.score);
+  const listened = ranked.filter((item) => item.score > 0).slice(0, 5);
+  return listened.length
+    ? listened
+    : ranked.slice(0, 5).map(({ label, query }) => ({ label, query }));
+}
+function renderExploreSuggestions() {
+  const suggestions = getListeningTypes();
+  searchSuggestions.innerHTML = `<div class="suggestion-heading">YOUR LISTENING MIX</div>`;
+  suggestions.forEach(({ label, query }) => {
+    const d = document.createElement("button");
+    d.className = "suggestion explore-suggestion";
+    d.type = "button";
+    d.innerHTML = `<span>${escapeHTML(label)}</span><small>${escapeHTML(query)}</small>`;
+    d.addEventListener("click", () => {
+      searchInput.value = query;
+      searchSuggestions.classList.add("hidden");
+      searchSongs();
+    });
+    searchSuggestions.appendChild(d);
+  });
+  searchSuggestions.classList.remove("hidden");
+}
 searchInput.addEventListener("input", renderSearchSuggestions);
 searchInput.addEventListener("focus", renderSearchSuggestions);
 searchInput.addEventListener("keydown", (e) => {
@@ -1020,6 +1060,12 @@ searchButton.addEventListener("click", () => {
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".search-container"))
     searchSuggestions.classList.add("hidden");
+});
+exploreButton.addEventListener("click", () => {
+  showPage("home");
+  searchInput.focus();
+  renderExploreSuggestions();
+  document.querySelector(".header").scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
 playResultsButton.addEventListener("click", () =>
