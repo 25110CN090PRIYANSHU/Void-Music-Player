@@ -20,14 +20,21 @@ if (!fs.existsSync(usersFile)) fs.writeFileSync(usersFile, "[]");
 
 function readUsers() {
     try {
-        return JSON.parse(fs.readFileSync(usersFile, "utf8"));
+        const users = JSON.parse(fs.readFileSync(usersFile, "utf8"));
+        return Array.isArray(users) ? users : [];
     } catch {
         return [];
     }
 }
 
 function writeUsers(users) {
-    fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
+    const temporaryFile = `${usersFile}.tmp`;
+    fs.writeFileSync(temporaryFile, JSON.stringify(users, null, 2), "utf8");
+    fs.renameSync(temporaryFile, usersFile);
+}
+
+function normalizeEmail(value) {
+    return String(value || "").normalize("NFKC").trim().toLowerCase();
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
@@ -37,9 +44,13 @@ function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
 
 function passwordsMatch(password, user) {
     try {
-        if (!user?.salt || !user?.hash) return false;
-        const hash = crypto.scryptSync(password, user.salt, 64).toString("hex");
-        const expected = Buffer.from(user.hash, "hex");
+        // Accept both the current fields and the older field names so accounts
+        // created by an earlier build continue to work after an update.
+        const salt = user?.salt || user?.passwordSalt;
+        const storedHash = user?.hash || user?.passwordHash;
+        if (!salt || !storedHash) return false;
+        const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+        const expected = Buffer.from(storedHash, "hex");
         const actual = Buffer.from(hash, "hex");
         return expected.length === actual.length && crypto.timingSafeEqual(actual, expected);
     } catch {
@@ -85,7 +96,7 @@ app.get("/auth.css", (req, res) => res.sendFile(path.join(publicDir, "auth.css")
 app.get("/auth.js", (req, res) => res.sendFile(path.join(publicDir, "auth.js")));
 
 app.post("/api/auth/register", (req, res) => {
-    const email = String(req.body.email || "").trim().toLowerCase();
+    const email = normalizeEmail(req.body.email);
     const name = String(req.body.name || "").trim();
     const password = String(req.body.password || "");
     if (name.length < 2 || name.length > 50)
@@ -107,11 +118,21 @@ app.post("/api/auth/register", (req, res) => {
 });
 
 app.post("/api/auth/login", (req, res) => {
-    const email = String(req.body.email || "").trim().toLowerCase();
+    const email = normalizeEmail(req.body.email);
     const password = String(req.body.password || "");
-    const user = readUsers().find((candidate) => candidate.email === email);
+    const users = readUsers();
+    const user = users.find((candidate) => normalizeEmail(candidate.email) === email);
     if (!user || !passwordsMatch(password, user))
         return res.status(401).json({ error: "Email or password is incorrect." });
+    // Upgrade an account created by a legacy build to the current hash fields.
+    if (!user.salt || !user.hash) {
+        const credentials = hashPassword(password);
+        user.salt = credentials.salt;
+        user.hash = credentials.hash;
+        delete user.passwordSalt;
+        delete user.passwordHash;
+        writeUsers(users);
+    }
     const token = createSession(user);
     setSessionCookie(res, token);
     res.json({ user: { id: user.id, name: user.name || user.email.split("@")[0], email: user.email } });

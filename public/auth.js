@@ -33,7 +33,7 @@ form.addEventListener("submit", async (event) => {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: name.value, email: email.value, password: password.value }),
     });
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "Unable to authenticate.");
     localStorage.setItem("voidUser", JSON.stringify(data.user));
     window.location.href = "/";
