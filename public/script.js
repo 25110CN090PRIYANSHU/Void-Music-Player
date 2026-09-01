@@ -145,7 +145,9 @@ async function loadProfile() {
     localStorage.setItem("voidUser", JSON.stringify(data.user));
     updateProfileUI(data.user);
   } catch {
-    try { updateProfileUI(JSON.parse(localStorage.getItem("voidUser"))); } catch {}
+    try {
+      updateProfileUI(JSON.parse(localStorage.getItem("voidUser")));
+    } catch {}
   }
 }
 function escapeHTML(v) {
@@ -422,7 +424,9 @@ async function searchSongs() {
     if (!r.ok) throw new Error(data.error || "Search failed");
     searchHistory = [
       query,
-      ...searchHistory.filter((item) => item.toLowerCase() !== query.toLowerCase()),
+      ...searchHistory.filter(
+        (item) => item.toLowerCase() !== query.toLowerCase(),
+      ),
     ].slice(0, 8);
     save("voidSearchHistory", searchHistory);
     songs = data.results || [];
@@ -969,7 +973,11 @@ function renderSearchSuggestions() {
   searchHistory.forEach((query) => {
     if (query.toLowerCase().includes(q) && !seen.has(query)) {
       seen.add(query);
-      matches.push({ title: query, channel: "Search history", historyQuery: query });
+      matches.push({
+        title: query,
+        channel: "Search history",
+        historyQuery: query,
+      });
     }
   });
   pool.forEach((s) => {
@@ -989,8 +997,16 @@ function renderSearchSuggestions() {
     ["Hip-hop and rap", "best hip hop rap songs"],
     ["Classical piano", "best classical piano music"],
   ].forEach(([label, query]) => {
-    if (label.toLowerCase().includes(q) && !matches.some((item) => item.historyQuery === query)) {
-      matches.push({ title: label, channel: "Suggested search", historyQuery: query, keywordSuggestion: true });
+    if (
+      label.toLowerCase().includes(q) &&
+      !matches.some((item) => item.historyQuery === query)
+    ) {
+      matches.push({
+        title: label,
+        channel: "Suggested search",
+        historyQuery: query,
+        keywordSuggestion: true,
+      });
     }
   });
   if (!matches.length) {
@@ -1005,10 +1021,13 @@ function renderSearchSuggestions() {
         d.textContent = `⌕ ${s.title}`;
       } else {
         d.innerHTML = `<span>◷ ${escapeHTML(s.historyQuery)}</span><button class="history-delete" type="button" aria-label="Delete search">×</button>`;
-        d.querySelector(".history-delete").addEventListener("click", (event) => {
-          event.stopPropagation();
-          removeSearchHistory(s.historyQuery);
-        });
+        d.querySelector(".history-delete").addEventListener(
+          "click",
+          (event) => {
+            event.stopPropagation();
+            removeSearchHistory(s.historyQuery);
+          },
+        );
       }
     } else {
       d.textContent = `${cleanTitle(s.title)} — ${s.channel}`;
@@ -1055,21 +1074,36 @@ function renderSearchHistorySuggestions() {
   searchSuggestions.classList.remove("hidden");
 }
 function getListeningTypes() {
-  const text = [...searchHistory, ...recent.map((song) => `${song.title} ${song.channel}`)]
+  const text = [
+    ...searchHistory,
+    ...recent.map((song) => `${song.title} ${song.channel}`),
+  ]
     .join(" ")
     .toLowerCase();
   const types = [
-    ["Bollywood", "latest Bollywood songs", /bollywood|hindi|tollywood|tamil|telugu/gi],
+    [
+      "Bollywood",
+      "latest Bollywood songs",
+      /bollywood|hindi|tollywood|tamil|telugu/gi,
+    ],
     ["Pop", "popular pop songs", /pop|hits|top 50/gi],
     ["Lo-fi & chill", "lofi chill beats", /lofi|lo-fi|chill|study|focus/gi],
     ["Workout", "workout music mix", /workout|gym|fitness|motivation/gi],
-    ["Devotional", "devotional music", /bhajan|devotional|mantra|qawwali|spiritual/gi],
+    [
+      "Devotional",
+      "devotional music",
+      /bhajan|devotional|mantra|qawwali|spiritual/gi,
+    ],
     ["Hip-hop & rap", "hip hop rap songs", /hip.?hop|rap|trap|eminem/gi],
     ["Rock", "best rock songs", /rock|metal|punk/gi],
     ["Classical", "best classical piano music", /classical|piano|orchestra/gi],
   ];
   const ranked = types
-    .map(([label, query, pattern]) => ({ label, query, score: (text.match(pattern) || []).length }))
+    .map(([label, query, pattern]) => ({
+      label,
+      query,
+      score: (text.match(pattern) || []).length,
+    }))
     .sort((a, b) => b.score - a.score);
   const listened = ranked.filter((item) => item.score > 0).slice(0, 5);
   return listened.length
@@ -1113,7 +1147,9 @@ exploreButton.addEventListener("click", () => {
   showPage("home");
   searchInput.focus();
   renderExploreSuggestions();
-  document.querySelector(".header").scrollIntoView({ behavior: "smooth", block: "start" });
+  document
+    .querySelector(".header")
+    .scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
 playResultsButton.addEventListener("click", () =>
@@ -1236,7 +1272,10 @@ avatarInput.addEventListener("change", () => {
 });
 logoutButton.addEventListener("click", logout);
 document.addEventListener("click", (event) => {
-  if (!event.target.closest("#profileMenu") && !event.target.closest("#profileButton")) {
+  if (
+    !event.target.closest("#profileMenu") &&
+    !event.target.closest("#profileButton")
+  ) {
     profileMenu.classList.add("hidden");
     $("profileButton").setAttribute("aria-expanded", "false");
   }

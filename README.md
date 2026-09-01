@@ -1,35 +1,59 @@
-# VOID Music Player — MAX Edition
+# VOID Music Player
 
-## What was upgraded
-- Favorites library with persistent storage
-- Queue with add/remove/reorder/clear
-- Recently Played history
-- Playlists with create/delete/add-song
-- Search suggestions from local history/favorites
-- Search result actions and context menu
-- Shuffle + Repeat Off/All/One
-- Full Now Playing modal
-- Queue drawer
-- Keyboard shortcuts
-- Theme settings
-- Persistent volume
-- Responsive mobile layout
-- Toast notifications and polished empty/loading states
-- YouTube IFrame playback remains the playback mechanism
+VOID is a YouTube-based music player with account authentication.
 
-## Run
-1. Keep your existing `.env` file in the project root, or copy `.env.example` to `.env`.
-2. Put your YouTube Data API key in:
-   `YOUTUBE_API_KEY=YOUR_KEY_HERE`
-3. Run:
-   `npm install`
-4. Start:
-   `npm start`
-5. Open:
-   `http://localhost:3000`
+## Important authentication fix
 
-Do not commit your real `.env` or API key to GitHub.
+The original version stored users in `data/users.json` and sessions in server memory. That is not reliable for a deployed app because a deployment/restart can recreate the filesystem and clear in-memory sessions.
 
-## Notes
-Lyrics are intentionally a UI entry point only in this build; automatic lyrics require a separate licensed/authorized lyrics provider.
-The visualizer is a playback animation and does not attempt to capture audio from the cross-origin YouTube iframe.
+This version stores **users and login sessions in MongoDB Atlas**, so accounts persist across restarts and redeployments.
+
+Passwords are still protected with Node.js `crypto.scryptSync()` and a unique salt for each account.
+
+## Local setup
+
+1. Install Node.js 18+.
+2. Run:
+
+```bash
+npm install
+```
+
+3. Create a `.env` file using `.env.example` as a template.
+4. Add your MongoDB Atlas connection string and YouTube API key.
+5. Start:
+
+```bash
+npm start
+```
+
+6. Open `http://localhost:3000`.
+
+## Render deployment
+
+Use:
+
+- **Build Command:** `npm install`
+- **Start Command:** `npm start`
+
+Add these Render Environment Variables:
+
+- `MONGODB_URI` = your MongoDB Atlas connection string
+- `MONGODB_DB` = `void_music_player`
+- `YOUTUBE_API_KEY` = your YouTube Data API key
+- `NODE_ENV` = `production`
+
+Do not upload `.env` or put secrets directly into the source code.
+
+### MongoDB Atlas network access
+
+Your Atlas cluster must allow connections from the deployed service. For a simple student deployment, Atlas Network Access can allow `0.0.0.0/0`; protect the database with a strong database user password and never expose the URI publicly.
+
+## Authentication behavior
+
+- Signup creates a MongoDB user document.
+- Login checks the email and scrypt password hash from MongoDB.
+- A secure random session token is stored as a hash in MongoDB.
+- Sessions expire after 7 days.
+- MongoDB's TTL index automatically removes expired sessions.
+- Existing `data/users.json` files are migrated automatically when present.
