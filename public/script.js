@@ -506,6 +506,9 @@ function playSong(index) {
   updateFavoriteButton();
   addRecent(currentSong);
   player.loadVideoById(currentSong.id);
+  // Explicitly resume playback after switching videos. This is important
+  // when the switch happens from the YouTube ENDED event.
+  player.playVideo();
   setPlayingUI(true);
   // YouTube may emit PLAYING before duration metadata is available.
   startProgressUpdater();
@@ -515,7 +518,10 @@ function playCurrent() {
     if (songs.length) playSong(0);
     return;
   }
-  if (playerReady && currentSong) player.loadVideoById(currentSong.id);
+  if (playerReady && currentSong) {
+    player.loadVideoById(currentSong.id);
+    player.playVideo();
+  }
 }
 function nextSong() {
   if (!songs.length) return;
