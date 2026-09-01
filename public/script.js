@@ -98,6 +98,7 @@ let repeatMode = "off"; // off | all | one
 let isMuted = false;
 let previousVolume = 80;
 let progressTimer = null;
+let endedSongId = null;
 let activePage = "home";
 let activeCollection = "search";
 let activeContextSong = null;
@@ -349,10 +350,26 @@ function handlePlayerReady(event) {
   event.target.setVolume(saved);
   updateMuteIcon();
 }
+function ensureVideoPlaying(videoId) {
+  // A browser may leave a video in the CUED state after loadVideoById()
+  // finishes from an ENDED event. Retry only for the expected new video.
+  [100, 500, 1200].forEach((delay) => {
+    setTimeout(() => {
+      if (!playerReady || !currentSong || currentSong.id !== videoId) return;
+      const state =
+        typeof player.getPlayerState === "function"
+          ? player.getPlayerState()
+          : null;
+      if (state !== YT.PlayerState.PLAYING && state !== YT.PlayerState.BUFFERING)
+        player.playVideo();
+    }, delay);
+  });
+}
 function handlePlayerState(event) {
   if (!window.YT) return;
   switch (event.data) {
     case YT.PlayerState.PLAYING:
+      endedSongId = null;
       setPlayingUI(true);
       startProgressUpdater();
       break;
@@ -372,19 +389,23 @@ function handlePlayerState(event) {
       modalProgress.value = 0;
       currentTime.textContent = "0:00";
       modalCurrent.textContent = "0:00";
+      const endedVideoId = event.target?.getVideoData?.()?.video_id;
+      if (endedVideoId && endedVideoId !== currentSong?.id) break;
+      if (!currentSong || endedSongId === currentSong.id) break;
+      endedSongId = currentSong.id;
       if (repeatMode === "one") {
-        playCurrent();
+        playCurrent(true);
         return;
       }
       if (settings.autoplayQueue && queue.length) {
         const idx = queue.findIndex((x) => x.id === currentSong?.id);
         const nextIdx = idx >= 0 ? idx + 1 : 0;
         if (nextIdx < queue.length) {
-          playQueueSong(nextIdx);
+          playQueueSong(nextIdx, true);
           return;
         }
       }
-      nextSong();
+      nextSong(true);
       break;
   }
 }
@@ -481,7 +502,7 @@ function createSongCard(song, index) {
   return card;
 }
 
-function playSong(index) {
+function playSong(index, ensurePlayback = false) {
   if (index < 0 || index >= songs.length) return;
   if (!playerReady) {
     showError("YouTube player is still loading. Please try again.");
@@ -503,6 +524,7 @@ function playSong(index) {
   modalCurrent.textContent = "0:00";
   duration.textContent = "0:00";
   modalDuration.textContent = "0:00";
+  endedSongId = null;
   updateFavoriteButton();
   addRecent(currentSong);
   player.loadVideoById(currentSong.id);
@@ -512,25 +534,28 @@ function playSong(index) {
   setPlayingUI(true);
   // YouTube may emit PLAYING before duration metadata is available.
   startProgressUpdater();
+  if (ensurePlayback) ensureVideoPlaying(currentSong.id);
 }
-function playCurrent() {
+function playCurrent(ensurePlayback = false) {
   if (currentIndex === -1) {
     if (songs.length) playSong(0);
     return;
   }
   if (playerReady && currentSong) {
+    endedSongId = null;
     player.loadVideoById(currentSong.id);
     player.playVideo();
+    if (ensurePlayback) ensureVideoPlaying(currentSong.id);
   }
 }
-function nextSong() {
+function nextSong(ensurePlayback = false) {
   if (!songs.length) return;
   let next;
   if (isShuffle) next = Math.floor(Math.random() * songs.length);
   else next = (currentIndex + 1) % songs.length;
   if (songs.length > 1 && next === currentIndex)
     next = (next + 1) % songs.length;
-  playSong(next);
+  playSong(next, ensurePlayback);
 }
 function previousSong() {
   if (!songs.length) return;
@@ -541,18 +566,18 @@ function previousSong() {
   let prev = (currentIndex - 1 + songs.length) % songs.length;
   playSong(prev);
 }
-function playQueueSong(index) {
+function playQueueSong(index, ensurePlayback = false) {
   if (index < 0 || index >= queue.length) return;
   const target = queue[index];
   const existing = songs.findIndex((x) => x.id === target.id);
   if (existing >= 0) {
-    playSong(existing);
+    playSong(existing, ensurePlayback);
     return;
   }
   songs = [target];
   activeCollection = "queue";
   currentIndex = 0;
-  playSong(0);
+  playSong(0, ensurePlayback);
 }
 function nextFromQueue() {
   if (!queue.length) {
@@ -678,6 +703,14 @@ function updateProgress() {
   duration.textContent = formatTime(total);
   modalCurrent.textContent = formatTime(cur);
   modalDuration.textContent = formatTime(total);
+  // Keep autoplay working if a browser misses the IFrame API ENDED event.
+  if (
+    cur >= total - 0.5 &&
+    typeof player.getPlayerState === "function" &&
+    player.getPlayerState() === YT.PlayerState.ENDED
+  ) {
+    handlePlayerState({ data: YT.PlayerState.ENDED });
+  }
 }
 function setRangeProgress(range, pct) {
   if (!range) return;
