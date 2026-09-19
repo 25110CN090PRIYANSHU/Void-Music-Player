@@ -33,3 +33,13 @@ Do not commit your real `.env` or API key to GitHub.
 ## Notes
 Lyrics are intentionally a UI entry point only in this build; automatic lyrics require a separate licensed/authorized lyrics provider.
 The visualizer is a playback animation and does not attempt to capture audio from the cross-origin YouTube iframe.
+
+
+## Playback updates
+- Autoplay continues to the next track automatically when a song ends.
+- Queue playback continues to the next queued song before returning to the current collection.
+- Media Session API support provides play/pause, previous/next and seek controls on supported mobile browsers and lock screens.
+- The page does not intentionally pause playback when it becomes hidden/minimized.
+
+### Important mobile background-playback limitation
+VOID currently uses the YouTube IFrame Player API as its audio source. Whether audio continues after a mobile browser is minimized or the screen is locked is controlled by the browser/YouTube and cannot be guaranteed by JavaScript. True reliable background audio requires using an audio source that the browser allows to continue in the background (for example, an `<audio>` stream served by the application) rather than a YouTube iframe.

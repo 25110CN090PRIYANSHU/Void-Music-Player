@@ -99,6 +99,9 @@ let isMuted = false;
 let previousVolume = 80;
 let progressTimer = null;
 let endedSongId = null;
+let autoplayWatchdog = null;
+let autoplayTransitioning = false;
+let autoplayGeneration = 0;
 let activePage = "home";
 let activeCollection = "search";
 let activeContextSong = null;
@@ -327,7 +330,7 @@ window.onYouTubeIframeAPIReady = function () {
     width: "1",
     videoId: "",
     playerVars: {
-      autoplay: 0,
+      autoplay: 1,
       controls: 0,
       disablekb: 1,
       modestbranding: 1,
@@ -349,6 +352,7 @@ function handlePlayerReady(event) {
   previousVolume = saved;
   event.target.setVolume(saved);
   updateMuteIcon();
+  startAutoplayWatchdog();
 }
 function ensureVideoPlaying(videoId) {
   // A browser may leave a video in the CUED state after loadVideoById()
@@ -365,6 +369,98 @@ function ensureVideoPlaying(videoId) {
     }, delay);
   });
 }
+function autoPlayNextSong(reason = "ended") {
+  if (!currentSong || autoplayTransitioning) return;
+
+  const finishedId = currentSong.id;
+  autoplayTransitioning = true;
+  endedSongId = finishedId;
+  autoplayGeneration++;
+  const generation = autoplayGeneration;
+
+  const advance = () => {
+    // Make sure an old timer/event cannot advance twice after the user
+    // manually selected another song.
+    if (generation !== autoplayGeneration || currentSong?.id !== finishedId) {
+      autoplayTransitioning = false;
+      return;
+    }
+
+    if (repeatMode === "one") {
+      autoplayTransitioning = false;
+      playCurrent(true);
+      return;
+    }
+
+    let next = -1;
+
+    // If the current song belongs to the queue, continue with the next queue item.
+    if (settings.autoplayQueue && queue.length) {
+      const qIndex = queue.findIndex((x) => x.id === finishedId);
+      if (qIndex >= 0 && qIndex + 1 < queue.length) next = qIndex + 1;
+    }
+
+    if (next >= 0) {
+      autoplayTransitioning = false;
+      playQueueSong(next, true);
+      return;
+    }
+
+    // Normal autoplay: always move to the next song in the active collection.
+    if (songs.length > 1) {
+      const nextIndex = isShuffle
+        ? (() => {
+            let n = Math.floor(Math.random() * songs.length);
+            while (n === currentIndex && songs.length > 1) {
+              n = Math.floor(Math.random() * songs.length);
+            }
+            return n;
+          })()
+        : (currentIndex + 1) % songs.length;
+
+      autoplayTransitioning = false;
+      playSong(nextIndex, true);
+      return;
+    }
+
+    autoplayTransitioning = false;
+  };
+
+  // Give the YouTube iframe a moment to finish its ENDED transition before
+  // loading another video. This is more reliable than immediately calling
+  // loadVideoById() from inside the ENDED callback on mobile browsers.
+  setTimeout(advance, reason === "youtube-ended" ? 80 : 0);
+}
+
+function startAutoplayWatchdog() {
+  clearInterval(autoplayWatchdog);
+  autoplayWatchdog = setInterval(() => {
+    if (!playerReady || !currentSong || autoplayTransitioning) return;
+
+    try {
+      const state = player.getPlayerState();
+      const total = Number(player.getDuration()) || 0;
+      const time = Number(player.getCurrentTime()) || 0;
+
+      // Primary fallback: YouTube says the video has ended.
+      if (state === YT.PlayerState.ENDED) {
+        autoPlayNextSong("watchdog-ended");
+        return;
+      }
+
+      // Secondary fallback: some iframe versions briefly stay PLAYING/BUFFERING
+      // at the final timestamp without emitting ENDED.
+      if (
+        total > 2 &&
+        time >= total - 0.25 &&
+        (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING)
+      ) {
+        autoPlayNextSong("watchdog-time");
+      }
+    } catch {}
+  }, 100);
+}
+
 function handlePlayerState(event) {
   if (!window.YT) return;
   switch (event.data) {
@@ -391,21 +487,7 @@ function handlePlayerState(event) {
       modalCurrent.textContent = "0:00";
       const endedVideoId = event.target?.getVideoData?.()?.video_id;
       if (endedVideoId && endedVideoId !== currentSong?.id) break;
-      if (!currentSong || endedSongId === currentSong.id) break;
-      endedSongId = currentSong.id;
-      if (repeatMode === "one") {
-        playCurrent(true);
-        return;
-      }
-      if (settings.autoplayQueue && queue.length) {
-        const idx = queue.findIndex((x) => x.id === currentSong?.id);
-        const nextIdx = idx >= 0 ? idx + 1 : 0;
-        if (nextIdx < queue.length) {
-          playQueueSong(nextIdx, true);
-          return;
-        }
-      }
-      nextSong(true);
+      autoPlayNextSong("youtube-ended");
       break;
   }
 }
@@ -420,7 +502,49 @@ function setPlayingUI(playing) {
   [modalRepeat, repeatButton].forEach((b) =>
     b.classList.toggle("active", repeatMode !== "off"),
   );
+  updateMediaSession();
 }
+
+function updateMediaSession() {
+  if (!("mediaSession" in navigator) || !currentSong) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: cleanTitle(currentSong.title),
+      artist: currentSong.channel || "VOID Music Player",
+      album: "VOID",
+      artwork: currentSong.thumbnail
+        ? [
+            { src: currentSong.thumbnail, sizes: "96x96", type: "image/jpeg" },
+            { src: currentSong.thumbnail, sizes: "256x256", type: "image/jpeg" },
+            { src: currentSong.thumbnail, sizes: "512x512", type: "image/jpeg" },
+          ]
+        : [],
+    });
+    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+  } catch (error) {
+    console.debug("Media Session metadata unavailable:", error);
+  }
+}
+
+function setupMediaSession() {
+  if (!("mediaSession" in navigator)) return;
+  const actions = {
+    play: () => playerReady && player?.playVideo(),
+    pause: () => playerReady && player?.pauseVideo(),
+    nexttrack: () => nextSong(true),
+    previoustrack: () => previousSong(),
+    seekbackward: () => {
+      if (playerReady) player.seekTo(Math.max(0, player.getCurrentTime() - 10), true);
+    },
+    seekforward: () => {
+      if (playerReady) player.seekTo(player.getCurrentTime() + 10, true);
+    },
+  };
+  Object.entries(actions).forEach(([action, handler]) => {
+    try { navigator.mediaSession.setActionHandler(action, handler); } catch {}
+  });
+}
+
 function handlePlayerError(event) {
   console.error("YouTube player error:", event.data);
   stopProgressUpdater();
@@ -509,7 +633,10 @@ function playSong(index, ensurePlayback = false) {
     return;
   }
   currentIndex = index;
+  autoplayGeneration++;
+  autoplayTransitioning = false;
   currentSong = normalizeSong(songs[index]);
+  updateMediaSession();
   playerTitle.textContent = cleanTitle(currentSong.title);
   playerArtist.textContent = currentSong.channel;
   playerThumbnail.src = currentSong.thumbnail;
@@ -528,9 +655,12 @@ function playSong(index, ensurePlayback = false) {
   updateFavoriteButton();
   addRecent(currentSong);
   player.loadVideoById(currentSong.id);
-  // Explicitly resume playback after switching videos. This is important
-  // when the switch happens from the YouTube ENDED event.
-  player.playVideo();
+  // Explicitly resume playback after switching videos. The short delay avoids
+  // racing YouTube's ENDED -> CUED transition on mobile browsers.
+  setTimeout(() => {
+    if (!currentSong || currentSong.id !== songs[index]?.id || !playerReady) return;
+    try { player.playVideo(); } catch {}
+  }, ensurePlayback ? 120 : 0);
   setPlayingUI(true);
   // YouTube may emit PLAYING before duration metadata is available.
   startProgressUpdater();
@@ -591,6 +721,19 @@ function nextFromQueue() {
   }
   playQueueSong(0);
 }
+
+setupMediaSession();
+
+// Do not pause playback when the player page is minimized/backgrounded.
+// The YouTube iframe remains the actual audio source. Media Session gives
+// supported mobile browsers lock-screen/headset controls.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && isPlaying) updateMediaSession();
+});
+
+window.addEventListener("pagehide", () => {
+  if (isPlaying) updateMediaSession();
+});
 
 playButton.addEventListener("click", () => {
   if (!playerReady) return;
