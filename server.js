@@ -209,28 +209,49 @@ app.get("/api/search", requireAuth, async (req, res) => {
             });
         }
 
-        const results = (data.items || [])
-            .filter(item => item.id?.videoId)
+        const candidates = (data.items || [])
+            .filter(item => item.id?.videoId);
+
+        // Search results can contain videos that YouTube does not allow to be
+        // embedded. Those videos produce IFrame API errors 101/150 and can
+        // make a playlist appear to stop. Ask the Videos API for embed status
+        // and remove them before sending results to the player.
+        let embeddableIds = new Set();
+        if (candidates.length) {
+            const ids = candidates.map(item => item.id.videoId).join(",");
+            const statusUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+            statusUrl.searchParams.set("part", "status");
+            statusUrl.searchParams.set("id", ids);
+            statusUrl.searchParams.set("key", apiKey);
+
+            const statusResponse = await fetch(statusUrl);
+            const statusData = await statusResponse.json();
+            if (statusResponse.ok) {
+                embeddableIds = new Set(
+                    (statusData.items || [])
+                        .filter(item => item.status?.embeddable === true)
+                        .map(item => item.id)
+                );
+            } else {
+                console.error("YouTube video-status API error:", statusData);
+                // If status lookup fails, keep the search results rather than
+                // breaking search completely. The client still handles 101/150.
+                embeddableIds = new Set(candidates.map(item => item.id.videoId));
+            }
+        }
+
+        const results = candidates
+            .filter(item => embeddableIds.has(item.id.videoId))
             .map(item => ({
                 id: item.id.videoId,
-
-                title:
-                    item.snippet?.title ||
-                    "Unknown title",
-
-                channel:
-                    item.snippet?.channelTitle ||
-                    "YouTube",
-
+                title: item.snippet?.title || "Unknown title",
+                channel: item.snippet?.channelTitle || "YouTube",
                 thumbnail:
                     item.snippet?.thumbnails?.high?.url ||
                     item.snippet?.thumbnails?.medium?.url ||
                     item.snippet?.thumbnails?.default?.url ||
                     `https://i.ytimg.com/vi/${item.id.videoId}/hqdefault.jpg`,
-
-                publishedAt:
-                    item.snippet?.publishedAt ||
-                    ""
+                publishedAt: item.snippet?.publishedAt || ""
             }));
 
         res.json({ results });
@@ -255,5 +276,3 @@ app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
     console.log("================================\n");
 });
-
-//harsh

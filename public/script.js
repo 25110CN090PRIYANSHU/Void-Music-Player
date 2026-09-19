@@ -330,7 +330,7 @@ window.onYouTubeIframeAPIReady = function () {
     width: "1",
     videoId: "",
     playerVars: {
-      autoplay: 1,
+      autoplay: 0,
       controls: 0,
       disablekb: 1,
       modestbranding: 1,
@@ -546,8 +546,31 @@ function setupMediaSession() {
 }
 
 function handlePlayerError(event) {
-  console.error("YouTube player error:", event.data);
+  const code = Number(event?.data);
+  console.error("YouTube player error:", code);
   stopProgressUpdater();
+
+  // YouTube errors 101/150 mean embedding is not allowed for the video;
+  // 100 means the video is unavailable. Skip these automatically when there
+  // is another song in the active collection instead of leaving autoplay
+  // stuck on a broken result.
+  const skippable = code === 100 || code === 101 || code === 150;
+  if (skippable && currentSong && songs.length > 1) {
+    showToast("This video cannot be played — skipping to the next song.");
+    autoplayGeneration++;
+    autoplayTransitioning = false;
+    setPlayingUI(false);
+    const nextIndex = isShuffle
+      ? (() => {
+          let n = Math.floor(Math.random() * songs.length);
+          while (n === currentIndex && songs.length > 1) n = Math.floor(Math.random() * songs.length);
+          return n;
+        })()
+      : (currentIndex + 1) % songs.length;
+    setTimeout(() => playSong(nextIndex, true), 120);
+    return;
+  }
+
   showError("This video cannot be played. Try another result.");
   setPlayingUI(false);
 }
