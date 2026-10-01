@@ -41,3 +41,7 @@ Deploy the **same server/database** for all devices. Do not run separate local s
 ### Important
 
 VOID uses YouTube's embedded player for playback. The PWA offline cache stores the application shell; it does not download or redistribute YouTube audio.
+
+
+## VOID Hub
+The Hub is an interactive command center for smart mixes, listening stats, connected devices, profiles, public playlists, PWA installation, sleep timer, and one-tap navigation. It uses the existing account/cloud APIs.

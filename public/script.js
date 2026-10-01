@@ -1573,3 +1573,101 @@ initSettings();
 updateMuteIcon();
 loadProfile();
 console.log("VOID Music Player — MAX edition loaded.");
+
+function escapeHtml(value){return String(value??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","\'":"&#39;"}[m]||m));}
+
+// =====================================================
+// VOID HUB — interactive command center
+// =====================================================
+let voidInstallPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); voidInstallPrompt = e; });
+
+function hubGo(page){
+  const btn=document.querySelector(`.nav-item[data-page="${page}"]`);
+  if(btn) btn.click();
+}
+function hubDeviceLabel(d){ return d.name || d.platform || "VOID device"; }
+async function refreshHubStats(){
+  try{
+    const r=await fetch("/api/stats"); const d=await r.json();
+    if(!r.ok) throw new Error(d.error||"stats");
+    $("statsTotal").textContent=d.totalPlays||0;
+    $("hubPlayCount").textContent=d.totalPlays||0;
+    $("hubPlaylistCount").textContent=d.totalPlaylists||0;
+    const box=$("topArtists"); box.innerHTML=(d.topArtists||[]).slice(0,4).map((x,i)=>`<div><b>${i+1}. ${escapeHtml(x.artist)}</b><span>${x.plays} plays</span></div>`).join("") || '<div><span>No listening data yet</span></div>';
+  }catch{ $("statsTotal").textContent=recent.length; $("hubPlayCount").textContent=recent.length; $("hubPlaylistCount").textContent=Object.keys(playlists||{}).length; }
+}
+async function refreshHubDevices(){
+  try{
+    const r=await fetch("/api/devices"); const d=await r.json(); const list=d.devices||[];
+    $("hubDeviceCount").textContent=list.length||1;
+    $("deviceList").innerHTML=list.slice(0,4).map(x=>`<div class="hub-device"><i></i><b>${escapeHtml(hubDeviceLabel(x))}</b><small>active</small></div>`).join("") || '<div class="hub-device"><i></i><b>This device</b><small>active</small></div>';
+  }catch{ $("hubDeviceCount").textContent="1"; }
+}
+async function refreshHubMix(){
+  try{
+    const r=await fetch("/api/recommendations"); const d=await r.json();
+    $("smartMixReason").textContent=d.reason||"Built from your listening activity.";
+    $("smartMixTitle").textContent=d.query ? `Your ${d.query.replace(/^latest /i,"")} mix` : "A mix built for you";
+    window.__hubMixQuery=d.query||"trending music";
+  }catch{ window.__hubMixQuery="trending music"; }
+}
+async function hubPlaySearch(query){
+  searchInput.value=query; await searchSongs(query); hubGo("home");
+  setTimeout(()=>{ if(songs.length) playCollection(songs,0,false); },350);
+}
+async function loadPublicHub(){
+  try{
+    const r=await fetch("/api/public-playlists"); const d=await r.json();
+    const box=$("publicPlaylistList"); const items=(d.playlists||[]).slice(0,4);
+    box.innerHTML=items.map((x,i)=>`<button class="public-hub-item" data-public-index="${i}"><b>${escapeHtml(x.name)}</b><span>${escapeHtml(x.owner?.name||"VOID user")} · ${(x.songs||[]).length} songs</span></button>`).join("") || '<div class="public-hub-item"><b>No public playlists yet</b><span>Publish your first collection.</span></div>';
+    box.querySelectorAll("[data-public-index]").forEach(el=>el.addEventListener("click",()=>{const x=items[Number(el.dataset.publicIndex)]; if(x?.songs?.length){ hubGo("home"); playCollection(x.songs,0,false); showToast(`Playing ${x.name}`); }}));
+  }catch{ $("publicPlaylistList").innerHTML='<div class="public-hub-item"><b>Community unavailable</b><span>Try again later.</span></div>'; }
+}
+async function publishHubPlaylist(){
+  const names=Object.keys(playlists||{}); if(!names.length){showToast("Create a playlist first"); hubGo("playlists"); return;}
+  const name=prompt(`Which playlist should be published?\n\n${names.join("\n")}`); if(!name || !playlists[name]) return;
+  try{const r=await fetch("/api/public-playlists",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,songs:playlists[name]})}); if(!r.ok)throw 0; showToast("Playlist published to VOID Community"); loadPublicHub();}catch{showToast("Could not publish playlist");}
+}
+function openHubProfile(){ hubGo("profile"); }
+async function hubInstall(){
+  if(voidInstallPrompt){voidInstallPrompt.prompt(); await voidInstallPrompt.userChoice; voidInstallPrompt=null; return;}
+  showToast(location.protocol==="https:" ? "Use your browser's install button to install VOID" : "PWA install requires HTTPS");
+}
+let hubSleepTimer=null;
+function hubSleep(){
+  const min=prompt("Sleep timer — enter minutes (0 to cancel)","30"); if(min===null)return; const n=Number(min);
+  if(!Number.isFinite(n)||n<0){showToast("Enter a valid number");return;} if(hubSleepTimer)clearTimeout(hubSleepTimer);
+  if(n===0){showToast("Sleep timer cancelled");return;}
+  hubSleepTimer=setTimeout(()=>{try{if(playerReady)player.pauseVideo();}catch{} showToast("Sleep timer ended");},n*60000); showToast(`Sleep timer set for ${n} minutes`);
+}
+function updateHubProfile(){
+  try{const u=JSON.parse(localStorage.getItem("voidUser")||"{}"); const p=u.library?.profile||{}; $("hubProfileName").textContent=u.name||"Your profile"; $("hubProfileBio").textContent=p.bio||"Your music, your identity."; const av=$("hubAvatar"); if(p.avatar)av.innerHTML=`<img src="${p.avatar}" alt="">`; else av.textContent=(u.name||"V").charAt(0).toUpperCase();}catch{}
+}
+async function initHub(){
+  updateHubProfile(); refreshHubStats(); refreshHubDevices(); refreshHubMix(); loadPublicHub();
+  $("hubLiveState").textContent=currentSong ? (isPlaying?"PLAYING":"PAUSED") : "READY";
+}
+
+$("hubDiscoverButton")?.addEventListener("click",()=>hubGo("home"));
+$("hubNowPlayingButton")?.addEventListener("click",()=>openNowPlaying());
+$("smartPlayButton")?.addEventListener("click",()=>hubPlaySearch(window.__hubMixQuery||"trending music"));
+$("moodWorkout")?.addEventListener("click",()=>hubPlaySearch("high energy workout music"));
+$("moodChill")?.addEventListener("click",()=>hubPlaySearch("chill lofi music"));
+$("moodStudy")?.addEventListener("click",()=>hubPlaySearch("study focus music"));
+$("statsButton")?.addEventListener("click",()=>{refreshHubStats();showToast("Stats refreshed")});
+$("refreshDevicesButton")?.addEventListener("click",()=>{refreshHubDevices();showToast("Devices refreshed")});
+$("editProfileButton")?.addEventListener("click",openHubProfile);
+$("publishPlaylistButton")?.addEventListener("click",publishHubPlaylist);
+$("browsePublicButton")?.addEventListener("click",()=>{loadPublicHub();showToast("Public playlists refreshed")});
+$("sleepTimerButton")?.addEventListener("click",hubSleep);
+$("installPwaButton")?.addEventListener("click",hubInstall);
+document.querySelectorAll("[data-hub-page]").forEach(b=>b.addEventListener("click",()=>hubGo(b.dataset.hubPage)));
+
+const originalPlaySongForHub=playSong;
+// Keep the Hub's live status in sync without changing the player behavior.
+const hubObserver=setInterval(()=>{
+  if($("hubPage")?.classList.contains("active-page")){ $("hubLiveState").textContent=currentSong ? (isPlaying?"PLAYING":"PAUSED") : "READY"; updateHubProfile(); }
+},1200);
+
+setTimeout(initHub,400);

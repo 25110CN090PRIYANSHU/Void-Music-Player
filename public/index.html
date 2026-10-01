@@ -194,16 +194,25 @@
 
 
           <section id="hubPage" class="page">
-            <div class="page-heading"><div><span class="section-label">VOID 3.0</span><h1>Your Music Universe</h1><p>Discover, personalize, sync and understand your listening across devices.</p></div></div>
-            <div class="feature-grid">
-              <article class="feature-card feature-wide"><span>🤖 SMART MIX</span><h3>Made for your mood</h3><p id="smartMixReason">VOID learns from your searches and recent listening.</p><div class="feature-actions"><button class="primary-button small" id="smartPlayButton">▶ Play smart mix</button><button class="secondary-button" id="moodWorkout">Workout</button><button class="secondary-button" id="moodChill">Chill</button><button class="secondary-button" id="moodStudy">Study</button></div></article>
-              <article class="feature-card"><span>📊 YOUR MUSIC</span><h3>Listening analytics</h3><div class="stats-big" id="statsTotal">0</div><p>recent plays</p><div id="topArtists" class="mini-list"></div></article>
-              <article class="feature-card"><span>👤 PROFILE</span><h3 id="hubProfileName">Your profile</h3><p id="hubProfileBio">Make your profile yours.</p><button class="secondary-button full" id="editProfileButton">Edit profile</button></article>
-              <article class="feature-card"><span>📱 DEVICES</span><h3>Where you're signed in</h3><div id="deviceList" class="mini-list"></div><button class="secondary-button full" id="refreshDevicesButton">Refresh devices</button></article>
-              <article class="feature-card feature-wide"><span>🌐 COMMUNITY</span><h3>Public playlists</h3><p>Publish a playlist and browse public VOID collections.</p><div class="feature-actions"><button class="primary-button small" id="publishPlaylistButton">Publish a playlist</button><button class="secondary-button" id="browsePublicButton">Browse public playlists</button></div><div id="publicPlaylistList" class="mini-grid"></div></article>
-              <article class="feature-card"><span>⚡ QUICK TOOLS</span><h3>Player extras</h3><div class="tool-buttons"><button id="sleepTimerButton" class="secondary-button full">⏱ Sleep timer</button><button id="installPwaButton" class="secondary-button full">⬇ Install VOID</button><button id="statsButton" class="secondary-button full">📊 Refresh stats</button></div></article>
-            </div>
-          </section>
+  <div class="hub-hero">
+    <div class="hub-hero-copy">
+      <span class="section-label">VOID COMMAND CENTER</span>
+      <h1>Everything you love.<br><span>One universe.</span></h1>
+      <p>Launch music, see your activity, jump between devices and discover what VOID has prepared for you.</p>
+      <div class="hub-actions"><button class="primary-button small" id="hubDiscoverButton">▶ Discover music</button><button class="secondary-button" id="hubNowPlayingButton">◉ Now playing</button></div>
+    </div>
+    <div class="hub-orbit"><div class="orbit-ring ring-a"></div><div class="orbit-ring ring-b"></div><div class="hub-core"><b>V</b><span id="hubLiveState">READY</span></div><i class="orbit-dot dot-a"></i><i class="orbit-dot dot-b"></i><i class="orbit-dot dot-c"></i></div>
+  </div>
+  <div class="hub-statusbar"><div><span class="status-dot"></span><b id="hubSyncStatus">Cloud synced</b><small id="hubSyncTime">Just now</small></div><div><b id="hubDeviceCount">1</b><small>devices</small></div><div><b id="hubPlayCount">0</b><small>plays</small></div><div><b id="hubPlaylistCount">0</b><small>playlists</small></div></div>
+  <div class="hub-grid">
+    <article class="hub-card smart-card"><div class="card-kicker">🤖 SMART MIX</div><h3 id="smartMixTitle">A mix built for you</h3><p id="smartMixReason">VOID learns from your recent listening and searches.</p><div class="mix-visual"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="hub-button-row"><button class="primary-button small" id="smartPlayButton">▶ Play mix</button><button class="secondary-button" id="moodWorkout">Workout</button><button class="secondary-button" id="moodChill">Chill</button><button class="secondary-button" id="moodStudy">Study</button></div></article>
+    <article class="hub-card analytics-card"><div class="card-kicker">📊 YOUR MUSIC</div><div class="analytics-head"><div><strong id="statsTotal">0</strong><span>recent plays</span></div><button class="icon-square" id="statsButton" title="Refresh statistics">↻</button></div><div id="topArtists" class="hub-mini-list"></div></article>
+    <article class="hub-card profile-card"><div class="card-kicker">👤 PROFILE</div><div class="profile-preview"><div class="hub-avatar" id="hubAvatar">V</div><div><h3 id="hubProfileName">Your profile</h3><p id="hubProfileBio">Make your profile yours.</p></div></div><button class="secondary-button full" id="editProfileButton">Edit profile</button></article>
+    <article class="hub-card devices-card"><div class="card-kicker">📱 LIVE DEVICES</div><h3>You're connected here</h3><div id="deviceList" class="hub-device-list"></div><button class="secondary-button full" id="refreshDevicesButton">Refresh devices</button></article>
+    <article class="hub-card public-card"><div class="card-kicker">🌐 COMMUNITY</div><h3>VOID playlists</h3><p>Share a collection or explore playlists made by other VOID users.</p><div class="hub-button-row"><button class="primary-button small" id="publishPlaylistButton">Publish playlist</button><button class="secondary-button" id="browsePublicButton">Explore</button></div><div id="publicPlaylistList" class="public-hub-list"></div></article>
+    <article class="hub-card tools-card"><div class="card-kicker">⚡ QUICK LAUNCH</div><h3>One tap away</h3><div class="hub-tools"><button data-hub-page="favorites">♥ Favorites</button><button data-hub-page="playlists">▣ Playlists</button><button data-hub-page="recent">◷ Recent</button><button id="sleepTimerButton">⏱ Sleep timer</button><button id="installPwaButton">⬇ Install VOID</button><button data-hub-page="settings">⚙ Settings</button></div></article>
+  </div>
+</section>
 
           <section id="profilePage" class="page">
             <div class="page-heading"><div><span class="section-label">ACCOUNT</span><h1>VOID Profile</h1><p>Control your public identity and shared playlists.</p></div></div>
