@@ -1,47 +1,33 @@
-# VOID Music Player 3.0
+# VOID Music Player 4.0
 
-A futuristic YouTube music player with account-based cloud library and multi-device sync.
+VOID 4.0 is a Discover-first YouTube music player with cloud-synced personal libraries and a redesigned music experience.
 
-## 3.0 features
-
-1. Cloud sync — favorites, playlists, queue, recent plays, search history and settings sync per account.
-2. Advanced player — shuffle, repeat, queue, Media Session support, lyrics, sleep timer and transition/crossfade setting.
-3. Mobile-first responsive UI and PWA installation.
-4. Smart home / mood mixes based on listening activity.
-5. Dynamic personalization and theme support.
-6. Playlist management and cloud persistence.
-7. Search suggestions, history and voice search.
-8. Account profiles with bio and public-profile switch.
-9. Public playlist publishing/browsing.
-10. Listening statistics and top-artist activity.
-11. Device list for the current account.
-12. Notifications/toasts and account actions.
-13. Offline app-shell caching through the service worker. YouTube audio itself is not downloaded.
-14. Email/password authentication plus optional Google OAuth.
-15. Multi-device account sessions using the same server/database.
+## Major update
+- Discover-first home screen (no separate Hub)
+- Cloud-synced favorites, playlists, queue, recent history and settings
+- Multi-device account library
+- VOID Radio mood stations that build a playable queue
+- Personal listening statistics and top artists
+- VOID Music Game with five-round song guessing
+- Advanced queue, shuffle, repeat and player controls
+- Lyrics lookup
+- Voice search
+- PWA install support and offline app shell
+- Profile/public playlist features
+- Responsive mobile layout
+- Keyboard shortcuts and Ctrl/Cmd+K universal search
+- Dynamic premium visual system
 
 ## Setup
+1. Copy `.env.example` to `.env`.
+2. Set `YOUTUBE_API_KEY`.
+3. Optionally configure Google OAuth values.
+4. Run `npm install`.
+5. Run `npm start`.
+6. Open the printed local URL and create/login to an account.
 
-```bash
-npm install
-```
+### Multi-device sync
+Both devices must use the same deployed VOID server and the same account. The account library is stored by the server, not only in browser localStorage.
 
-Copy `.env.example` to `.env`, then set `YOUTUBE_API_KEY`.
-
-```bash
-npm start
-```
-
-For Google sign-in, create a Google OAuth Web Application and set the three `GOOGLE_*` variables. The redirect URI must exactly match the one configured with Google.
-
-### Deployment
-
-Deploy the **same server/database** for all devices. Do not run separate local servers if you want the cloud library to be shared between phone and PC.
-
-### Important
-
-VOID uses YouTube's embedded player for playback. The PWA offline cache stores the application shell; it does not download or redistribute YouTube audio.
-
-
-## VOID Hub
-The Hub is an interactive command center for smart mixes, listening stats, connected devices, profiles, public playlists, PWA installation, sleep timer, and one-tap navigation. It uses the existing account/cloud APIs.
+### Offline note
+The PWA caches the application shell for offline startup. It does not download or cache YouTube audio.

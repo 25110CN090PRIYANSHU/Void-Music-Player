@@ -30,7 +30,9 @@
             <button class="nav-item" data-page="playlists">
               <span>▣</span><span>Playlists</span>
             </button>
-            <button class="nav-item" data-page="hub"><span>✦</span><span>VOID Hub</span></button>
+            <button class="nav-item" data-page="radio"><span>◉</span><span>VOID Radio</span></button>
+            <button class="nav-item" data-page="stats"><span>⌁</span><span>Your Stats</span></button>
+            <button class="nav-item" data-page="game"><span>◆</span><span>Music Game</span></button>
           </div>
 
           <div class="nav-section">
@@ -89,15 +91,15 @@
           <section id="homePage" class="page active-page">
             <section class="hero">
               <div class="hero-content">
-                <span class="hero-label">YOUTUBE MUSIC</span>
-                <h1>Your music.<br />Your <span>VOID.</span></h1>
+                <span class="hero-label">VOID 4.0 • MUSIC UNIVERSE</span>
+                <h1>Music without<br />the <span>friction.</span></h1>
                 <p>
-                  Search YouTube, build your library, manage queues and
-                  playlists, and control playback from one place.
+                  Search, discover, save, remix and play — with your library synced across your devices.
                 </p>
                 <button id="exploreButton" class="primary-button">
-                  Explore Music <span>→</span>
+                  Start discovering <span>→</span>
                 </button>
+                <button id="smartHomeButton" class="secondary-button">✦ Surprise me</button>
               </div>
               <div class="hero-visual">
                 <div class="orb orb-1"></div>
@@ -193,26 +195,34 @@
           </section>
 
 
-          <section id="hubPage" class="page">
-  <div class="hub-hero">
-    <div class="hub-hero-copy">
-      <span class="section-label">VOID COMMAND CENTER</span>
-      <h1>Everything you love.<br><span>One universe.</span></h1>
-      <p>Launch music, see your activity, jump between devices and discover what VOID has prepared for you.</p>
-      <div class="hub-actions"><button class="primary-button small" id="hubDiscoverButton">▶ Discover music</button><button class="secondary-button" id="hubNowPlayingButton">◉ Now playing</button></div>
-    </div>
-    <div class="hub-orbit"><div class="orbit-ring ring-a"></div><div class="orbit-ring ring-b"></div><div class="hub-core"><b>V</b><span id="hubLiveState">READY</span></div><i class="orbit-dot dot-a"></i><i class="orbit-dot dot-b"></i><i class="orbit-dot dot-c"></i></div>
-  </div>
-  <div class="hub-statusbar"><div><span class="status-dot"></span><b id="hubSyncStatus">Cloud synced</b><small id="hubSyncTime">Just now</small></div><div><b id="hubDeviceCount">1</b><small>devices</small></div><div><b id="hubPlayCount">0</b><small>plays</small></div><div><b id="hubPlaylistCount">0</b><small>playlists</small></div></div>
-  <div class="hub-grid">
-    <article class="hub-card smart-card"><div class="card-kicker">🤖 SMART MIX</div><h3 id="smartMixTitle">A mix built for you</h3><p id="smartMixReason">VOID learns from your recent listening and searches.</p><div class="mix-visual"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="hub-button-row"><button class="primary-button small" id="smartPlayButton">▶ Play mix</button><button class="secondary-button" id="moodWorkout">Workout</button><button class="secondary-button" id="moodChill">Chill</button><button class="secondary-button" id="moodStudy">Study</button></div></article>
-    <article class="hub-card analytics-card"><div class="card-kicker">📊 YOUR MUSIC</div><div class="analytics-head"><div><strong id="statsTotal">0</strong><span>recent plays</span></div><button class="icon-square" id="statsButton" title="Refresh statistics">↻</button></div><div id="topArtists" class="hub-mini-list"></div></article>
-    <article class="hub-card profile-card"><div class="card-kicker">👤 PROFILE</div><div class="profile-preview"><div class="hub-avatar" id="hubAvatar">V</div><div><h3 id="hubProfileName">Your profile</h3><p id="hubProfileBio">Make your profile yours.</p></div></div><button class="secondary-button full" id="editProfileButton">Edit profile</button></article>
-    <article class="hub-card devices-card"><div class="card-kicker">📱 LIVE DEVICES</div><h3>You're connected here</h3><div id="deviceList" class="hub-device-list"></div><button class="secondary-button full" id="refreshDevicesButton">Refresh devices</button></article>
-    <article class="hub-card public-card"><div class="card-kicker">🌐 COMMUNITY</div><h3>VOID playlists</h3><p>Share a collection or explore playlists made by other VOID users.</p><div class="hub-button-row"><button class="primary-button small" id="publishPlaylistButton">Publish playlist</button><button class="secondary-button" id="browsePublicButton">Explore</button></div><div id="publicPlaylistList" class="public-hub-list"></div></article>
-    <article class="hub-card tools-card"><div class="card-kicker">⚡ QUICK LAUNCH</div><h3>One tap away</h3><div class="hub-tools"><button data-hub-page="favorites">♥ Favorites</button><button data-hub-page="playlists">▣ Playlists</button><button data-hub-page="recent">◷ Recent</button><button id="sleepTimerButton">⏱ Sleep timer</button><button id="installPwaButton">⬇ Install VOID</button><button data-hub-page="settings">⚙ Settings</button></div></article>
-  </div>
-</section>
+          <section id="radioPage" class="page">
+            <div class="page-heading major-heading"><div><span class="section-label">VOID RADIO</span><h1>Pick a mood.<br><span>We'll pick the music.</span></h1><p>One tap creates a live queue from YouTube.</p></div></div>
+            <div class="radio-grid">
+              <button class="radio-card radio-purple" data-radio="late night chill"><span>◐</span><b>Late Night</b><small>Dreamy • ambient • lofi</small></button>
+              <button class="radio-card radio-blue" data-radio="focus study coding music"><span>⌁</span><b>Deep Focus</b><small>Study • coding • concentration</small></button>
+              <button class="radio-card radio-red" data-radio="high energy workout music"><span>↯</span><b>Power Mode</b><small>Gym • energy • motivation</small></button>
+              <button class="radio-card radio-gold" data-radio="bollywood hits party mix"><span>✦</span><b>Bollywood</b><small>Hits • party • desi vibes</small></button>
+              <button class="radio-card radio-green" data-radio="indie alternative music mix"><span>◇</span><b>Indie Orbit</b><small>Alternative • fresh finds</small></button>
+              <button class="radio-card radio-pink" data-radio="romantic love songs mix"><span>♡</span><b>After Hours</b><small>Romantic • slow • emotional</small></button>
+            </div>
+            <div class="radio-now"><div><span class="section-label">LIVE RADIO</span><h2 id="radioTitle">Nothing queued yet</h2><p id="radioDescription">Choose a station and VOID will build a queue.</p></div><button id="radioStopButton" class="secondary-button">Stop radio</button></div>
+          </section>
+
+          <section id="statsPage" class="page">
+            <div class="page-heading major-heading"><div><span class="section-label">YOUR VOID</span><h1>Your listening<br><span>universe.</span></h1><p>A private view of how you use VOID.</p></div><button id="refreshStatsPage" class="secondary-button">↻ Refresh</button></div>
+            <div class="stats-hero-grid">
+              <article class="big-stat"><span>Total plays</span><strong id="pageTotalPlays">0</strong><small>songs started on this account</small></article>
+              <article class="big-stat"><span>Favorites</span><strong id="pageTotalFavorites">0</strong><small>saved for later</small></article>
+              <article class="big-stat"><span>Playlists</span><strong id="pageTotalPlaylists">0</strong><small>your collections</small></article>
+              <article class="big-stat"><span>Recent songs</span><strong id="pageRecentCount">0</strong><small>listening history</small></article>
+            </div>
+            <div class="stats-columns"><article class="stats-panel"><span class="section-label">TOP ARTISTS</span><h2>What keeps you listening</h2><div id="pageTopArtists" class="artist-bars"></div></article><article class="stats-panel"><span class="section-label">RECENTLY PLAYED</span><h2>Your latest sessions</h2><div id="pageRecentStats" class="stats-song-list"></div></article></div>
+          </section>
+
+          <section id="gamePage" class="page">
+            <div class="page-heading major-heading"><div><span class="section-label">VOID GAME</span><h1>Can you guess<br><span>the track?</span></h1><p>Hear the song, then pick the correct title from four choices.</p></div><button id="startGameButton" class="primary-button small">▶ Start game</button></div>
+            <div class="game-shell"><div class="game-score"><span>ROUND <b id="gameRound">0</b>/5</span><span>SCORE <b id="gameScore">0</b></span><span>STREAK <b id="gameStreak">0</b>🔥</span></div><div class="game-art" id="gameArt"><div class="game-art-inner">V</div></div><h2 id="gameQuestion">Press Start Game</h2><p id="gameHint">VOID will search a music category and create a playable quiz.</p><div id="gameChoices" class="game-choices"></div><button id="gamePlayButton" class="secondary-button hidden">▶ Play clip</button></div>
+          </section>
 
           <section id="profilePage" class="page">
             <div class="page-heading"><div><span class="section-label">ACCOUNT</span><h1>VOID Profile</h1><p>Control your public identity and shared playlists.</p></div></div>
@@ -285,7 +295,7 @@
     <div id="youtubePlayer" class="youtube-player"></div>
 
     <footer class="player">
-      <div class="now-playing">
+      <div id="nowPlaying" class="now-playing">
         <div class="cover-wrapper">
           <img id="playerThumbnail" src="" alt="Album artwork" />
           <div id="playingIndicator" class="playing-indicator">
@@ -484,7 +494,6 @@
     </div>
 
     <script src="script.js"></script>
-    <script src="features.js"></script>
     <script src="https://www.youtube.com/iframe_api"></script>
   </body>
 </html>

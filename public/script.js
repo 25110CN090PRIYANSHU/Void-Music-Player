@@ -1576,98 +1576,84 @@ console.log("VOID Music Player — MAX edition loaded.");
 
 function escapeHtml(value){return String(value??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","\'":"&#39;"}[m]||m));}
 
+
 // =====================================================
-// VOID HUB — interactive command center
+// VOID 4.0 — DISCOVER / RADIO / STATS / GAME
 // =====================================================
-let voidInstallPrompt = null;
-window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); voidInstallPrompt = e; });
+function voidSafeText(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
 
-function hubGo(page){
-  const btn=document.querySelector(`.nav-item[data-page="${page}"]`);
-  if(btn) btn.click();
-}
-function hubDeviceLabel(d){ return d.name || d.platform || "VOID device"; }
-async function refreshHubStats(){
-  try{
-    const r=await fetch("/api/stats"); const d=await r.json();
-    if(!r.ok) throw new Error(d.error||"stats");
-    $("statsTotal").textContent=d.totalPlays||0;
-    $("hubPlayCount").textContent=d.totalPlays||0;
-    $("hubPlaylistCount").textContent=d.totalPlaylists||0;
-    const box=$("topArtists"); box.innerHTML=(d.topArtists||[]).slice(0,4).map((x,i)=>`<div><b>${i+1}. ${escapeHtml(x.artist)}</b><span>${x.plays} plays</span></div>`).join("") || '<div><span>No listening data yet</span></div>';
-  }catch{ $("statsTotal").textContent=recent.length; $("hubPlayCount").textContent=recent.length; $("hubPlaylistCount").textContent=Object.keys(playlists||{}).length; }
-}
-async function refreshHubDevices(){
-  try{
-    const r=await fetch("/api/devices"); const d=await r.json(); const list=d.devices||[];
-    $("hubDeviceCount").textContent=list.length||1;
-    $("deviceList").innerHTML=list.slice(0,4).map(x=>`<div class="hub-device"><i></i><b>${escapeHtml(hubDeviceLabel(x))}</b><small>active</small></div>`).join("") || '<div class="hub-device"><i></i><b>This device</b><small>active</small></div>';
-  }catch{ $("hubDeviceCount").textContent="1"; }
-}
-async function refreshHubMix(){
-  try{
-    const r=await fetch("/api/recommendations"); const d=await r.json();
-    $("smartMixReason").textContent=d.reason||"Built from your listening activity.";
-    $("smartMixTitle").textContent=d.query ? `Your ${d.query.replace(/^latest /i,"")} mix` : "A mix built for you";
-    window.__hubMixQuery=d.query||"trending music";
-  }catch{ window.__hubMixQuery="trending music"; }
-}
-async function hubPlaySearch(query){
-  searchInput.value=query; await searchSongs(query); hubGo("home");
-  setTimeout(()=>{ if(songs.length) playCollection(songs,0,false); },350);
-}
-async function loadPublicHub(){
-  try{
-    const r=await fetch("/api/public-playlists"); const d=await r.json();
-    const box=$("publicPlaylistList"); const items=(d.playlists||[]).slice(0,4);
-    box.innerHTML=items.map((x,i)=>`<button class="public-hub-item" data-public-index="${i}"><b>${escapeHtml(x.name)}</b><span>${escapeHtml(x.owner?.name||"VOID user")} · ${(x.songs||[]).length} songs</span></button>`).join("") || '<div class="public-hub-item"><b>No public playlists yet</b><span>Publish your first collection.</span></div>';
-    box.querySelectorAll("[data-public-index]").forEach(el=>el.addEventListener("click",()=>{const x=items[Number(el.dataset.publicIndex)]; if(x?.songs?.length){ hubGo("home"); playCollection(x.songs,0,false); showToast(`Playing ${x.name}`); }}));
-  }catch{ $("publicPlaylistList").innerHTML='<div class="public-hub-item"><b>Community unavailable</b><span>Try again later.</span></div>'; }
-}
-async function publishHubPlaylist(){
-  const names=Object.keys(playlists||{}); if(!names.length){showToast("Create a playlist first"); hubGo("playlists"); return;}
-  const name=prompt(`Which playlist should be published?\n\n${names.join("\n")}`); if(!name || !playlists[name]) return;
-  try{const r=await fetch("/api/public-playlists",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,songs:playlists[name]})}); if(!r.ok)throw 0; showToast("Playlist published to VOID Community"); loadPublicHub();}catch{showToast("Could not publish playlist");}
-}
-function openHubProfile(){ hubGo("profile"); }
-async function hubInstall(){
-  if(voidInstallPrompt){voidInstallPrompt.prompt(); await voidInstallPrompt.userChoice; voidInstallPrompt=null; return;}
-  showToast(location.protocol==="https:" ? "Use your browser's install button to install VOID" : "PWA install requires HTTPS");
-}
-let hubSleepTimer=null;
-function hubSleep(){
-  const min=prompt("Sleep timer — enter minutes (0 to cancel)","30"); if(min===null)return; const n=Number(min);
-  if(!Number.isFinite(n)||n<0){showToast("Enter a valid number");return;} if(hubSleepTimer)clearTimeout(hubSleepTimer);
-  if(n===0){showToast("Sleep timer cancelled");return;}
-  hubSleepTimer=setTimeout(()=>{try{if(playerReady)player.pauseVideo();}catch{} showToast("Sleep timer ended");},n*60000); showToast(`Sleep timer set for ${n} minutes`);
-}
-function updateHubProfile(){
-  try{const u=JSON.parse(localStorage.getItem("voidUser")||"{}"); const p=u.library?.profile||{}; $("hubProfileName").textContent=u.name||"Your profile"; $("hubProfileBio").textContent=p.bio||"Your music, your identity."; const av=$("hubAvatar"); if(p.avatar)av.innerHTML=`<img src="${p.avatar}" alt="">`; else av.textContent=(u.name||"V").charAt(0).toUpperCase();}catch{}
-}
-async function initHub(){
-  updateHubProfile(); refreshHubStats(); refreshHubDevices(); refreshHubMix(); loadPublicHub();
-  $("hubLiveState").textContent=currentSong ? (isPlaying?"PLAYING":"PAUSED") : "READY";
-}
+const smartHomeButton=$("smartHomeButton");
+exploreButton?.addEventListener("click",()=>{ searchInput.focus(); showPage("home"); });
+smartHomeButton?.addEventListener("click",async()=>{
+  const queries=["trending music","best new songs","lofi chill","bollywood hits","popular songs"];
+  const q=queries[Math.floor(Math.random()*queries.length)];
+  searchInput.value=q; await searchSongs();
+  if(songs.length) playSong(0,true);
+});
 
-$("hubDiscoverButton")?.addEventListener("click",()=>hubGo("home"));
-$("hubNowPlayingButton")?.addEventListener("click",()=>openNowPlaying());
-$("smartPlayButton")?.addEventListener("click",()=>hubPlaySearch(window.__hubMixQuery||"trending music"));
-$("moodWorkout")?.addEventListener("click",()=>hubPlaySearch("high energy workout music"));
-$("moodChill")?.addEventListener("click",()=>hubPlaySearch("chill lofi music"));
-$("moodStudy")?.addEventListener("click",()=>hubPlaySearch("study focus music"));
-$("statsButton")?.addEventListener("click",()=>{refreshHubStats();showToast("Stats refreshed")});
-$("refreshDevicesButton")?.addEventListener("click",()=>{refreshHubDevices();showToast("Devices refreshed")});
-$("editProfileButton")?.addEventListener("click",openHubProfile);
-$("publishPlaylistButton")?.addEventListener("click",publishHubPlaylist);
-$("browsePublicButton")?.addEventListener("click",()=>{loadPublicHub();showToast("Public playlists refreshed")});
-$("sleepTimerButton")?.addEventListener("click",hubSleep);
-$("installPwaButton")?.addEventListener("click",hubInstall);
-document.querySelectorAll("[data-hub-page]").forEach(b=>b.addEventListener("click",()=>hubGo(b.dataset.hubPage)));
+async function startVoidRadio(query,label){
+  showPage("radio");
+  const title=$("radioTitle"), desc=$("radioDescription");
+  if(title) title.textContent="Building your station…";
+  try{
+    searchInput.value=query;
+    await searchSongs();
+    if(!songs.length) throw new Error("No tracks found");
+    // Keep the radio experience continuous without replacing the user's library.
+    queue=[...songs.slice(1,15).map(normalizeSong)]; save("voidQueue",queue); renderQueue(); updateBadges();
+    activeCollection="search"; currentIndex=0; playSong(0,true);
+    if(title) title.textContent=label||query;
+    if(desc) desc.textContent=`Playing ${songs.length} fresh tracks. Add anything you love to your library.`;
+    showToast(`VOID Radio: ${label||query}`);
+  }catch(e){if(title)title.textContent="Station unavailable";if(desc)desc.textContent=e.message||"Try another station.";}
+}
+document.querySelectorAll("[data-radio]").forEach(card=>card.addEventListener("click",()=>startVoidRadio(card.dataset.radio,card.querySelector("b")?.textContent)));
+$("radioStopButton")?.addEventListener("click",()=>{try{player?.pauseVideo()}catch{};showToast("Radio paused")});
 
-const originalPlaySongForHub=playSong;
-// Keep the Hub's live status in sync without changing the player behavior.
-const hubObserver=setInterval(()=>{
-  if($("hubPage")?.classList.contains("active-page")){ $("hubLiveState").textContent=currentSong ? (isPlaying?"PLAYING":"PAUSED") : "READY"; updateHubProfile(); }
-},1200);
+async function renderVoidStats(){
+  try{
+    const r=await fetch("/api/stats"); if(!r.ok) throw new Error(); const d=await r.json();
+    $("pageTotalPlays").textContent=d.totalPlays||0; $("pageTotalFavorites").textContent=d.totalFavorites||0; $("pageTotalPlaylists").textContent=d.totalPlaylists||0; $("pageRecentCount").textContent=(d.history||[]).length;
+    const artists=$("pageTopArtists"); const top=d.topArtists||[]; const max=Math.max(1,...top.map(x=>x.plays));
+    artists.innerHTML=top.length?top.map(x=>`<div class="artist-bar"><span title="${voidSafeText(x.artist)}">${voidSafeText(x.artist)}</span><div class="artist-track"><div class="artist-fill" style="width:${Math.max(5,(x.plays/max)*100)}%"></div></div><b>${x.plays}</b></div>`).join(""):"<p class='muted'>Play some music to build your stats.</p>";
+    const list=$("pageRecentStats"); const history=d.history||[]; list.innerHTML=history.length?history.slice(0,8).map(x=>`<div class="stats-song"><img src="${voidSafeText(x.thumbnail||"")}" alt=""><div><b>${voidSafeText(cleanTitle(x.title))}</b><span>${voidSafeText(x.channel||"YouTube")}</span></div></div>`).join(""):"<p class='muted'>Your listening history will appear here.</p>";
+  }catch{showToast("Stats could not be refreshed");}
+}
+$("refreshStatsPage")?.addEventListener("click",()=>{renderVoidStats();showToast("Stats refreshed")});
 
-setTimeout(initHub,400);
+let gameRound=0,gameScore=0,gameStreak=0,gameAnswer=null,gameSongs=[];
+const gameQueries=["popular music","top hits","bollywood songs","english hits","lofi music","rock classics"];
+async function startVoidGame(){
+  gameRound=0;gameScore=0;gameStreak=0;gameAnswer=null; updateGameScore(); await nextGameRound();
+}
+function updateGameScore(){$("gameRound").textContent=gameRound;$('gameScore').textContent=gameScore;$('gameStreak').textContent=gameStreak;}
+async function nextGameRound(){
+  if(gameRound>=5){$("gameQuestion").textContent=`Final score: ${gameScore}/5`;$("gameHint").textContent=gameScore>=4?"VOID thinks you know your music.":"Run it again and beat your score.";$("gameChoices").innerHTML="";return;}
+  const q=gameQueries[Math.floor(Math.random()*gameQueries.length)];
+  try{
+    const r=await fetch(`/api/search?q=${encodeURIComponent(q)}`); const d=await r.json(); if(!r.ok||!d.results?.length)throw new Error();
+    gameSongs=d.results.slice(0,8); gameAnswer=gameSongs[Math.floor(Math.random()*gameSongs.length)]; gameRound++; updateGameScore();
+    $("gameQuestion").textContent="Which track is this?";$("gameHint").textContent="Pick the title you think is correct. Then VOID will play it.";$("gameArt").style.backgroundImage=`url(${gameAnswer.thumbnail})`;$("gameArt").querySelector(".game-art-inner").textContent="?";
+    const choices=[gameAnswer,...gameSongs.filter(x=>x.id!==gameAnswer.id).sort(()=>Math.random()-.5).slice(0,3)].sort(()=>Math.random()-.5);
+    $("gameChoices").innerHTML=choices.map(x=>`<button class="game-choice" data-id="${voidSafeText(x.id)}">${voidSafeText(cleanTitle(x.title))}<small>${voidSafeText(x.channel)}</small></button>`).join("");
+    document.querySelectorAll(".game-choice").forEach(btn=>btn.addEventListener("click",()=>answerGame(btn.dataset.id)));
+  }catch{ $("gameQuestion").textContent="Game needs a search connection";$("gameHint").textContent="Check your YouTube API key and try again."; }
+}
+function answerGame(id){
+  const buttons=[...document.querySelectorAll(".game-choice")]; buttons.forEach(b=>b.disabled=true);
+  const correct=id===gameAnswer.id; const chosen=gameSongs.find(x=>x.id===id); const button=buttons.find(b=>b.dataset.id===id);
+  if(correct){gameScore++;gameStreak++;button?.classList.add("correct");showToast("Correct! +1");}
+  else{gameStreak=0;button?.classList.add("wrong");buttons.find(b=>b.dataset.id===gameAnswer.id)?.classList.add("correct");showToast(`The answer was ${cleanTitle(gameAnswer.title)}`);}
+  updateGameScore(); songs=gameSongs; currentIndex=gameSongs.findIndex(x=>x.id===gameAnswer.id); if(currentIndex>=0) playSong(currentIndex,true);
+  setTimeout(nextGameRound,1100);
+}
+$("startGameButton")?.addEventListener("click",startVoidGame); $("gamePlayButton")?.addEventListener("click",()=>{if(gameAnswer){songs=gameSongs;currentIndex=gameSongs.findIndex(x=>x.id===gameAnswer.id);playSong(currentIndex,true)}});
+
+// Ctrl/Cmd + K focuses the universal search. Escape returns to Discover.
+document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();searchInput.focus();searchInput.select();} if(e.key==="Escape"&&activePage!=="home"&&document.activeElement!==searchInput)showPage("home");});
+
+// Extend page lifecycle without disturbing the original player.
+const originalShowPage=showPage;
+showPage=function(page){ originalShowPage(page); if(page==="stats")renderVoidStats(); if(page==="game"&&gameRound===0){} };
+
+console.log("VOID Music Player 4.0 — Major Update loaded.");
