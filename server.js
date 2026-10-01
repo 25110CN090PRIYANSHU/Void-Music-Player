@@ -260,6 +260,37 @@ app.get("/api/discover", requireAuth, async (req,res)=>{
     }
 });
 
+app.get("/api/radio", requireAuth, async (req,res)=>{
+    try {
+        const {u}=findAuthedUser(req); const library=ensureUserLibrary(u); const profile=buildDiscoverProfile(library);
+        const station=String(req.query.station||"chill").slice(0,80);
+        const stationMap={
+          "late night chill":"late night Hindi Indian Bollywood lofi romantic chill songs",
+          "focus study coding music":"Indian Hindi lofi study focus instrumental Bollywood chill",
+          "high energy workout music":"Indian Punjabi Hindi Bollywood workout gym party energetic songs",
+          "bollywood hits party mix":"latest Hindi Bollywood Indian party dance hits",
+          "indie alternative music mix":"Indian indie Hindi Punjabi alternative songs",
+          "romantic love songs mix":"Hindi Bollywood Indian romantic love songs",
+        };
+        const stationQuery=stationMap[station]||`Indian Hindi Bollywood ${station}`;
+        const learned=(profile.interests||[]).join(" ");
+        const query=`Indian Hindi Bollywood ${learned} ${stationQuery}`.replace(/\s+/g," ").trim();
+        const apiKey=process.env.YOUTUBE_API_KEY; if(!apiKey)return res.status(500).json({error:"YouTube API key is missing"});
+        const url=new URL("https://www.googleapis.com/youtube/v3/search");
+        for(const [k,v] of Object.entries({part:"snippet",type:"video",videoCategoryId:"10",maxResults:"24",q:query,regionCode:"IN",relevanceLanguage:"hi",key:apiKey})) url.searchParams.set(k,v);
+        const response=await fetch(url); const data=await response.json();
+        if(!response.ok)return res.status(response.status).json({error:data?.error?.message||"YouTube API error"});
+        const candidates=(data.items||[]).filter(x=>x.id?.videoId);
+        let embeddableIds=new Set(candidates.map(x=>x.id.videoId));
+        if(candidates.length){
+          const su=new URL("https://www.googleapis.com/youtube/v3/videos"); su.searchParams.set("part","status"); su.searchParams.set("id",candidates.map(x=>x.id.videoId).join(",")); su.searchParams.set("key",apiKey);
+          const sr=await fetch(su); const sd=await sr.json(); if(sr.ok) embeddableIds=new Set((sd.items||[]).filter(x=>x.status?.embeddable===true).map(x=>x.id));
+        }
+        const results=candidates.filter(x=>embeddableIds.has(x.id.videoId)).map(item=>({id:item.id.videoId,title:item.snippet?.title||"Unknown title",channel:item.snippet?.channelTitle||"YouTube",thumbnail:item.snippet?.thumbnails?.high?.url||item.snippet?.thumbnails?.medium?.url||`https://i.ytimg.com/vi/${item.id.videoId}/hqdefault.jpg`,publishedAt:item.snippet?.publishedAt||""}));
+        res.json({results,query,reason:profile.reason,interests:profile.interests});
+    } catch(e){ console.error("Radio error",e); res.status(500).json({error:"Could not build your Indian radio station"}); }
+});
+
 app.get("/api/lyrics", requireAuth, async (req,res)=>{ try { const artist=String(req.query.artist||""); const title=String(req.query.title||""); if(!title)return res.status(400).json({error:"Song title required"}); const url=new URL("https://lrclib.net/api/get"); url.searchParams.set("artist_name",artist); url.searchParams.set("track_name",title); const r=await fetch(url); if(!r.ok)return res.status(404).json({error:"Lyrics not found"}); const d=await r.json(); res.json({lyrics:d.plainLyrics||d.syncedLyrics||"Lyrics unavailable",syncedLyrics:d.syncedLyrics||""}); } catch(e){ res.status(502).json({error:"Lyrics service unavailable"}); } });
 app.get("/api/public-playlists", (req,res)=>res.json({playlists:readPublicPlaylists().map(x=>({id:x.id,name:x.name,owner:x.owner,updatedAt:x.updatedAt,songs:x.songs}))}));
 app.post("/api/public-playlists", requireAuth, (req,res)=>{ const {u}=findAuthedUser(req); const list=readPublicPlaylists(); const item={id:crypto.randomUUID(),name:String(req.body?.name||"VOID Playlist").slice(0,80),owner:{id:u.id,name:u.name},songs:Array.isArray(req.body?.songs)?req.body.songs.slice(0,500):[],updatedAt:new Date().toISOString()}; list.unshift(item); writePublicPlaylists(list.slice(0,100)); res.json({playlist:item}); });

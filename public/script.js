@@ -40,7 +40,15 @@ const favoriteButton = $("favoriteButton"),
   nowPlaying = $("nowPlaying");
 const queueOpenButton = $("queueOpenButton"),
   fullscreenPlayerButton = $("fullscreenPlayerButton"),
-  playerMoreButton = $("playerMoreButton");
+  playerMoreButton = $("playerMoreButton"),
+  miniPlayerButton = $("miniPlayerButton"),
+  compactPlayer = $("compactPlayer"),
+  compactThumbnail = $("compactThumbnail"),
+  compactTitle = $("compactTitle"),
+  compactArtist = $("compactArtist"),
+  compactPlay = $("compactPlay"),
+  compactExpand = $("compactExpand"),
+  compactClose = $("compactClose");
 const queuePanel = $("queuePanel"),
   queueOverlay = $("queueOverlay"),
   closeQueue = $("closeQueue"),
@@ -722,6 +730,10 @@ function playSong(index, ensurePlayback = false) {
   playerTitle.textContent = cleanTitle(currentSong.title);
   playerArtist.textContent = currentSong.channel;
   playerThumbnail.src = currentSong.thumbnail;
+  if (compactThumbnail) compactThumbnail.src = currentSong.thumbnail || "";
+  if (compactTitle) compactTitle.textContent = cleanTitle(currentSong.title);
+  if (compactArtist) compactArtist.textContent = currentSong.channel || "VOID Music";
+  compactPlayer?.classList.remove("hidden");
   modalTitle.textContent = cleanTitle(currentSong.title);
   modalArtist.textContent = currentSong.channel;
   modalThumbnail.src = currentSong.thumbnail;
@@ -1438,6 +1450,14 @@ function initSettings() {
 function openNowPlaying() {
   nowPlayingModal.classList.remove("hidden");
 }
+miniPlayerButton?.addEventListener("click", () => {
+  if (!currentSong) return showToast("Play a song first");
+  document.body.classList.toggle("compact-player-mode");
+  compactPlayer?.classList.toggle("hidden", !document.body.classList.contains("compact-player-mode"));
+});
+compactPlay?.addEventListener("click", () => playButton.click());
+compactExpand?.addEventListener("click", openNowPlaying);
+compactClose?.addEventListener("click", () => document.body.classList.remove("compact-player-mode"));
 fullscreenPlayerButton.addEventListener("click", openNowPlaying);
 $("openPlayerButton").addEventListener("click", openNowPlaying);
 async function openLyrics() {
@@ -1620,16 +1640,17 @@ smartHomeButton?.addEventListener("click",async()=>{
 async function startVoidRadio(query,label){
   showPage("radio");
   const title=$("radioTitle"), desc=$("radioDescription");
-  if(title) title.textContent="Building your station…";
+  if(title) title.textContent="Building your Indian station…";
   try{
-    searchInput.value=query;
-    await searchSongs();
-    if(!songs.length) throw new Error("No tracks found");
-    // Keep the radio experience continuous without replacing the user's library.
-    queue=[...songs.slice(1,15).map(normalizeSong)]; save("voidQueue",queue); renderQueue(); updateBadges();
-    activeCollection="search"; currentIndex=0; playSong(0,true);
-    if(title) title.textContent=label||query;
-    if(desc) desc.textContent=`Playing ${songs.length} fresh tracks. Add anything you love to your library.`;
+    const r=await fetch(`/api/radio?station=${encodeURIComponent(query)}`);
+    const d=await r.json();
+    if(!r.ok || !Array.isArray(d.results) || !d.results.length) throw new Error(d.error||"No Indian tracks found");
+    songs=d.results.map(normalizeSong);
+    activeCollection="radio"; currentIndex=0;
+    queue=songs.slice(1,15); save("voidQueue",queue); renderQueue(); updateBadges();
+    playSong(0,true);
+    if(title) title.textContent=label||"VOID Radio";
+    if(desc) desc.textContent=`Indian ${label||"music"} • ${d.reason||"Personalized from your listening"}`;
     showToast(`VOID Radio: ${label||query}`);
   }catch(e){if(title)title.textContent="Station unavailable";if(desc)desc.textContent=e.message||"Try another station.";}
 }
