@@ -95,6 +95,7 @@ let activeContextSong = null;
 let queue = load("voidQueue", []);
 let favorites = load("voidFavorites", []);
 let recent = load("voidRecent", []);
+let playCounts = load("voidPlayCounts", {});
 let searchHistory = load("voidSearchHistory", []);
 let playlists = load("voidPlaylists", {});
 let cloudReady = false;
@@ -113,7 +114,7 @@ function load(key, fallback) {
 }
 function save(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
-  if (cloudReady && ["voidFavorites","voidQueue","voidRecent","voidPlaylists","voidSearchHistory","voidSettings"].includes(key)) scheduleCloudSync();
+  if (cloudReady && ["voidFavorites","voidQueue","voidRecent","voidPlayCounts","voidPlaylists","voidSearchHistory","voidSettings"].includes(key)) scheduleCloudSync();
 }
 function scheduleCloudSync(){
   clearTimeout(cloudSyncTimer);
@@ -122,20 +123,20 @@ function scheduleCloudSync(){
 async function syncCloudLibrary(){
   if(!cloudReady) return;
   try{
-    await fetch("/api/library",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({library:{favorites,queue,recent,playlists,searchHistory,settings,lastPlayed:currentSong?{...normalizeSong(currentSong),savedAt:Date.now()}:null}})});
+    await fetch("/api/library",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({library:{favorites,queue,recent,playCounts,playlists,searchHistory,settings,lastPlayed:currentSong?{...normalizeSong(currentSong),savedAt:Date.now()}:null}})});
   }catch(e){ console.warn("VOID cloud sync failed",e); }
 }
 async function loadCloudLibrary(){
   try{
     const r=await fetch("/api/library"); if(!r.ok) return;
     const d=await r.json(); const c=d.library||{};
-    const local={favorites,queue,recent,playlists,searchHistory,settings};
-    const cloudHas= (c.favorites?.length||c.queue?.length||c.recent?.length||Object.keys(c.playlists||{}).length||c.searchHistory?.length);
+    const local={favorites,queue,recent,playCounts,playlists,searchHistory,settings};
+    const cloudHas= (c.favorites?.length||c.queue?.length||c.recent?.length||Object.keys(c.playCounts||{}).length||Object.keys(c.playlists||{}).length||c.searchHistory?.length);
     if(!cloudHas && (local.favorites.length||local.queue.length||local.recent.length||Object.keys(local.playlists).length||local.searchHistory.length)){
       cloudReady=true; await syncCloudLibrary(); return;
     }
-    favorites=Array.isArray(c.favorites)?c.favorites:[]; queue=Array.isArray(c.queue)?c.queue:[]; recent=Array.isArray(c.recent)?c.recent:[]; playlists=c.playlists&&typeof c.playlists==='object'?c.playlists:{}; searchHistory=Array.isArray(c.searchHistory)?c.searchHistory:[]; settings=Object.assign(settings,c.settings||{});
-    save("voidFavorites",favorites); save("voidQueue",queue); save("voidRecent",recent); save("voidPlaylists",playlists); save("voidSearchHistory",searchHistory); save("voidSettings",settings);
+    favorites=Array.isArray(c.favorites)?c.favorites:[]; queue=Array.isArray(c.queue)?c.queue:[]; recent=Array.isArray(c.recent)?c.recent:[]; playCounts=c.playCounts&&typeof c.playCounts==='object'?c.playCounts:{}; playlists=c.playlists&&typeof c.playlists==='object'?c.playlists:{}; searchHistory=Array.isArray(c.searchHistory)?c.searchHistory:[]; settings=Object.assign(settings,c.settings||{});
+    save("voidFavorites",favorites); save("voidQueue",queue); save("voidRecent",recent); save("voidPlayCounts",playCounts); save("voidPlaylists",playlists); save("voidSearchHistory",searchHistory); save("voidSettings",settings);
     cloudReady=true;
     updateBadges(); renderQueue(); renderFavorites(); renderRecent(); renderQueuePage(); renderPlaylists(); initSettings();
   }catch(e){ console.warn("VOID cloud library unavailable",e); cloudReady=true; }
@@ -290,10 +291,19 @@ function clearQueueAll() {
 
 function addRecent(song) {
   if (!song?.id) return;
+  const normalized = normalizeSong(song);
+  const key = normalized.id;
+  playCounts[key] = {
+    ...(playCounts[key] || {}),
+    count: Number(playCounts[key]?.count || 0) + 1,
+    song: normalized,
+    lastPlayedAt: Date.now(),
+  };
   recent = recent.filter((x) => x.id !== song.id);
-  recent.unshift({ ...normalizeSong(song), playedAt: Date.now() });
+  recent.unshift({ ...normalized, playedAt: Date.now() });
   recent = recent.slice(0, 50);
   save("voidRecent", recent);
+  save("voidPlayCounts", playCounts);
   if (activePage === "recent") renderRecent();
 }
 

@@ -1,39 +1,18 @@
-# VOID Music Player 4.0.5
+# VOID Music Player 4.0.6 — Personalized Indian Discover + Working VOID Radio
 
-VOID 4.0 is a Discover-first YouTube music player with cloud-synced personal libraries and a redesigned music experience.
+## What's fixed
+- Discover now learns from the account's play counts, recent plays, favorites and search history.
+- Indian music is enforced in Discover and Radio results instead of relying only on YouTube's language relevance.
+- Discover ranks candidates by the user's strongest categories, artists and repeatedly played songs.
+- Every VOID Radio station combines its station mood with the user's dominant taste.
+- Clicking a station immediately loads the personalized Indian queue and starts playback.
+- Play counts are stored in the cloud library, so personalization follows the same account across devices.
+- Embeddability is checked before tracks are returned, reducing autoplay failures from restricted videos.
 
-## Major update
-- Discover-first home screen (no separate Hub)
-- Cloud-synced favorites, playlists, queue, recent history and settings
-- Multi-device account library
-- VOID Radio mood stations with strict Indian-content filtering and taste-based personalization
-- Personal listening statistics and top artists
-- VOID Music Game with five-round song guessing
-- Advanced queue, shuffle, repeat and player controls
-- Lyrics lookup
-- Voice search
-- PWA install support and offline app shell
-- Profile/public playlist features
-- Responsive mobile layout
-- Keyboard shortcuts and Ctrl/Cmd+K universal search
-- Dynamic premium visual system
+## Deploy
+1. `npm install`
+2. Set `YOUTUBE_API_KEY` in Render/environment variables.
+3. Start with `npm start`.
+4. Keep the same persistent Mongo/database setup if you use the cloud version of your existing deployment; this build's local `data/users.json` is the fallback account store.
 
-## Setup
-1. Copy `.env.example` to `.env`.
-2. Set `YOUTUBE_API_KEY`.
-3. Optionally configure Google OAuth values.
-4. Run `npm install`.
-5. Run `npm start`.
-6. Open the printed local URL and create/login to an account.
-
-### Multi-device sync
-Both devices must use the same deployed VOID server and the same account. The account library is stored by the server, not only in browser localStorage.
-
-### Offline note
-The PWA caches the application shell for offline startup. It does not download or cache YouTube audio.
-
-
-## 4.0.5 update
-- Desktop sidebar is fully scrollable without being covered by the fixed player.
-- Radio stations now request up to 50 candidates, apply the user's strongest learned categories, and reject generic/global results unless the result contains an Indian-language signal or a recognized Indian artist/label signal.
-- Radio station cards now clearly indicate that they are Indian and personalized.
+YouTube search uses `regionCode=IN`, Hindi relevance, music category filtering and additional Indian-content ranking. YouTube can still return highly relevant results outside a requested language, so VOID applies a second application-level Indian-content filter.
