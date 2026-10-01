@@ -269,6 +269,9 @@
               <div class="settings-card">
                 <h3>Player</h3>
                 <p>Quick controls for the player.</p>
+                <button id="openPlayerButton" class="secondary-button full">
+                  Open Now Playing
+                </button>
                 <button id="shortcutsButton" class="secondary-button full">
                   Keyboard shortcuts
                 </button>
@@ -348,6 +351,13 @@
         </button>
         <button id="muteButton" class="volume-button" title="Mute">🔊</button>
         <input id="volume" type="range" min="0" max="100" value="80" />
+        <button
+          id="fullscreenPlayerButton"
+          class="volume-button"
+          title="Now Playing"
+        >
+          ↗
+        </button>
       </div>
     </footer>
 
@@ -366,6 +376,43 @@
       </div>
       <div id="queueList" class="queue-list"></div>
     </aside>
+
+    <div id="nowPlayingModal" class="modal hidden">
+      <div class="modal-backdrop" data-close-modal></div>
+      <div class="now-modal">
+        <button class="modal-close" data-close-modal>×</button>
+        <div class="now-modal-art-wrap">
+          <img id="modalThumbnail" src="" alt="" />
+          <div class="visualizer" id="visualizer">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+            ><i></i><i></i><i></i>
+          </div>
+        </div>
+        <span class="section-label">NOW PLAYING</span>
+        <h2 id="modalTitle">Nothing playing</h2>
+        <p id="modalArtist">—</p>
+        <div class="modal-progress">
+          <span id="modalCurrent">0:00</span
+          ><input
+            id="modalProgress"
+            type="range"
+            min="0"
+            max="100"
+            value="0"
+            step=".1"
+          /><span id="modalDuration">0:00</span>
+        </div>
+        <div class="modal-controls">
+          <button id="modalShuffle">⤨</button><button id="modalPrev">⏮</button
+          ><button id="modalPlay" class="modal-play">▶</button
+          ><button id="modalNext">⏭</button><button id="modalRepeat">↻</button>
+        </div>
+        <div class="modal-links">
+          <button id="lyricsButton">♪ Lyrics</button
+          ><button id="modalQueueButton">♫ Queue</button>
+        </div>
+      </div>
+    </div>
 
     <div id="lyricsModal" class="modal hidden">
       <div class="modal-backdrop" data-close-modal></div>
