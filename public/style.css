@@ -1981,3 +1981,25 @@ body.light-mode .artist-fill{background:linear-gradient(90deg,#6d4aff,#0891b2)!i
 .sidebar nav{min-height:max-content;}
 .sidebar-bottom{position:relative;bottom:auto;}
 .sidebar::-webkit-scrollbar{width:7px}.sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:99px}.sidebar::-webkit-scrollbar-track{background:transparent}
+
+
+/* VOID 4.0.4 — accessible sidebar + Indian radio polish */
+.sidebar{
+  height:calc(100vh - 90px);
+  max-height:calc(100vh - 90px);
+  overflow-y:auto !important;
+  overflow-x:hidden !important;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+  -webkit-overflow-scrolling:touch;
+  padding-bottom:34px !important;
+}
+.sidebar nav{flex:0 0 auto;min-height:max-content;}
+.sidebar-bottom{flex:0 0 auto;position:relative !important;bottom:auto !important;margin-top:8px;}
+.sidebar::-webkit-scrollbar{width:8px}
+.sidebar::-webkit-scrollbar-thumb{background:rgba(167,139,250,.35);border-radius:99px}
+.sidebar::-webkit-scrollbar-thumb:hover{background:rgba(167,139,250,.65)}
+.sidebar::-webkit-scrollbar-track{background:transparent}
+body.light-mode .sidebar::-webkit-scrollbar-thumb{background:rgba(76,50,201,.25)}
+body.light-mode .sidebar::-webkit-scrollbar-thumb:hover{background:rgba(76,50,201,.45)}
+.radio-card small::before{content:"INDIA • ";font-weight:700;letter-spacing:.06em;opacity:.9}
