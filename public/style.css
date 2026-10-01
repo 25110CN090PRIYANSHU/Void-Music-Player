@@ -1898,3 +1898,80 @@ body{background:radial-gradient(circle at 70% -10%,rgba(124,58,237,.18),transpar
 .player{background:rgba(7,7,10,.92)!important;backdrop-filter:blur(24px);border-top:1px solid var(--void-line)!important}.play-button{box-shadow:0 8px 28px rgba(167,139,250,.3)}
 @media(max-width:900px){.radio-grid{grid-template-columns:1fr 1fr}.stats-hero-grid{grid-template-columns:1fr 1fr}.stats-columns{grid-template-columns:1fr}.major-heading h1{font-size:3.4rem!important}}
 @media(max-width:600px){.radio-grid{grid-template-columns:1fr}.radio-card{min-height:150px}.stats-hero-grid{grid-template-columns:1fr 1fr}.big-stat{padding:18px}.big-stat strong{font-size:36px}.game-choices{grid-template-columns:1fr}.game-shell{padding:20px}.hero{min-height:430px!important}.hero-content h1{font-size:3.2rem!important}}
+
+
+/* =====================================================
+   VOID 4.0.1 — TRUE LIGHT THEME + INDIAN DISCOVER FEED
+   Keep this block last so it wins over the visual refresh rules above.
+   ===================================================== */
+.discover-reason{margin-top:7px;color:var(--muted);font-size:13px;max-width:720px}
+body.light-mode{
+  --void-bg:#f7f8fc;
+  --void-panel:rgba(255,255,255,.88);
+  --void-line:rgba(15,23,42,.12);
+  --void-text:#111827;
+  --void-muted:#5f6675;
+  --void-accent:#6d4aff;
+  --void-accent2:#0891b2;
+  --bg:#f7f8fc;
+  --sidebar:#ffffff;
+  --card:#ffffff;
+  --card-hover:#f1f3f8;
+  --border:#dfe3eb;
+  --text:#111827;
+  --muted:#5f6675;
+  --accent:#111827;
+  --player:rgba(255,255,255,.96);
+  --soft:#eef1f6;
+  background:radial-gradient(circle at 80% -10%,rgba(109,74,255,.12),transparent 30%),radial-gradient(circle at 5% 80%,rgba(8,145,178,.08),transparent 28%),var(--bg)!important;
+  color:var(--text)!important;
+}
+body.light-mode .sidebar,
+body.light-mode .header,
+body.light-mode .player{background:rgba(255,255,255,.9)!important;color:var(--text)!important;border-color:var(--border)!important}
+body.light-mode .logo,
+body.light-mode .nav-item,
+body.light-mode .nav-title,
+body.light-mode .section-label,
+body.light-mode .section-header h2,
+body.light-mode .page-heading h1,
+body.light-mode .page-heading p,
+body.light-mode .hero-content h1,
+body.light-mode .hero-content p,
+body.light-mode .song-title,
+body.light-mode .song-channel,
+body.light-mode .player-title,
+body.light-mode .player-artist,
+body.light-mode .header-actions button,
+body.light-mode .mobile-logo{color:var(--text)!important}
+body.light-mode .nav-item:hover{background:#eef1f7!important;color:#111827!important}
+body.light-mode .nav-item.active{background:linear-gradient(90deg,#ece8ff,#f5f3ff)!important;color:#4c32c9!important;border-color:#d8d0ff!important}
+body.light-mode .hero{background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(239,241,248,.96))!important;border-color:var(--border)!important;box-shadow:0 25px 70px rgba(31,41,55,.10)!important}
+body.light-mode .hero:after{background:radial-gradient(circle,rgba(109,74,255,.12),transparent 65%)!important}
+body.light-mode .hero-content h1 span,body.light-mode .major-heading h1 span{background:linear-gradient(90deg,#111827,#6d4aff,#0891b2)!important;-webkit-background-clip:text!important;background-clip:text!important;color:transparent!important}
+body.light-mode .search-container{background:#fff!important;border-color:#dfe3eb!important;box-shadow:0 8px 30px rgba(31,41,55,.06)}
+body.light-mode .search-container input{color:#111827!important}
+body.light-mode .search-container input::placeholder{color:#7b8190!important}
+body.light-mode .song-card{background:linear-gradient(180deg,#fff,#f7f8fb)!important;border-color:#e0e4ec!important;box-shadow:0 10px 30px rgba(31,41,55,.06)!important}
+body.light-mode .song-card:hover{border-color:#cfc6ff!important;box-shadow:0 18px 42px rgba(31,41,55,.11)!important}
+body.light-mode .small-button,body.light-mode .secondary-button,body.light-mode .icon-button{background:#fff!important;color:#111827!important;border-color:#d7dce5!important}
+body.light-mode .primary-button{background:#111827!important;color:#fff!important;border-color:#111827!important}
+body.light-mode .section-actions button{color:#111827!important}
+body.light-mode .settings-card,body.light-mode .playlist-card,body.light-mode .library-item,body.light-mode .radio-now,body.light-mode .stats-panel,body.light-mode .big-stat{background:rgba(255,255,255,.88)!important;border-color:#e0e4ec!important;color:#111827!important;box-shadow:0 10px 35px rgba(31,41,55,.05)}
+body.light-mode .settings-card p,body.light-mode .settings-card h3,body.light-mode .library-item small,body.light-mode .library-item span,body.light-mode .muted{color:var(--muted)!important}
+body.light-mode .radio-card{color:#fff!important}
+body.light-mode .game-shell{background:linear-gradient(145deg,#fff,#f1f3f8)!important;border-color:#e0e4ec!important;color:#111827!important;box-shadow:0 25px 65px rgba(31,41,55,.10)!important}
+body.light-mode .game-choice{background:#fff!important;color:#111827!important;border-color:#dfe3eb!important}
+body.light-mode .queue-panel,body.light-mode .modal,.light-mode .profile-menu,body.light-mode .context-menu{background:#fff!important;color:#111827!important;border-color:#dfe3eb!important}
+body.light-mode .queue-item:hover,body.light-mode .playlist-choice:hover,.light-mode .context-item:hover{background:#f0f2f7!important}
+body.light-mode .void-card{background:#f0f2f7!important;border-color:#dfe3eb!important}
+body.light-mode .void-card strong,body.light-mode .void-card small{color:#111827!important}
+body.light-mode .player{box-shadow:0 -12px 35px rgba(31,41,55,.10)!important}
+body.light-mode .progress-track,body.light-mode .volume-track{background:#d9dee8!important}
+body.light-mode .modal-overlay{background:rgba(15,23,42,.35)!important}
+body.light-mode .toast{background:#111827!important;color:#fff!important}
+body.light-mode .hero-visual{opacity:.85}
+body.light-mode .vinyl{box-shadow:0 0 70px rgba(109,74,255,.18),inset 0 0 0 1px rgba(15,23,42,.08)!important}
+body.light-mode .radio-card small{color:rgba(255,255,255,.78)!important}
+body.light-mode .artist-track{background:#e3e6ed!important}
+body.light-mode .artist-fill{background:linear-gradient(90deg,#6d4aff,#0891b2)!important}

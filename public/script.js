@@ -606,6 +606,32 @@ function handlePlayerError(event) {
   setPlayingUI(false);
 }
 
+async function loadDiscoverFeed() {
+  showLoading(true);
+  hideError();
+  try {
+    const r = await fetch("/api/discover");
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Discover feed failed");
+    songs = Array.isArray(data.results) ? data.results : [];
+    activeCollection = "discover";
+    currentIndex = -1;
+    sectionLabel.textContent = "MADE FOR YOU • INDIA";
+    sectionTitle.textContent = "Your Discover Feed";
+    const reason = $("discoverReason");
+    if (reason) reason.textContent = data.reason || "Indian music first — VOID learns your taste as you listen.";
+    resultActions.classList.toggle("hidden", !songs.length);
+    renderSongs();
+  } catch (e) {
+    console.error(e);
+    const reason = $("discoverReason");
+    if (reason) reason.textContent = "Indian music first — play a few songs and VOID will personalize this feed.";
+    showError(e.message || "Could not load your discover feed");
+  } finally {
+    showLoading(false);
+  }
+}
+
 async function searchSongs() {
   const query = searchInput.value.trim();
   if (!query) {
@@ -629,6 +655,8 @@ async function searchSongs() {
     currentIndex = -1;
     sectionLabel.textContent = "SEARCH RESULTS";
     sectionTitle.textContent = `Results for "${query}"`;
+    const discoverReason = $("discoverReason");
+    if (discoverReason) discoverReason.textContent = "Search results — use Home to return to your personalized Indian feed.";
     resultActions.classList.toggle("hidden", !songs.length);
     renderSongs();
     showPage("home");
@@ -1571,7 +1599,7 @@ renderQueuePage();
 renderPlaylists();
 initSettings();
 updateMuteIcon();
-loadProfile();
+loadProfile().finally(() => loadDiscoverFeed());
 console.log("VOID Music Player — MAX edition loaded.");
 
 function escapeHtml(value){return String(value??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","\'":"&#39;"}[m]||m));}
@@ -1585,10 +1613,8 @@ function voidSafeText(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;
 const smartHomeButton=$("smartHomeButton");
 exploreButton?.addEventListener("click",()=>{ searchInput.focus(); showPage("home"); });
 smartHomeButton?.addEventListener("click",async()=>{
-  const queries=["trending music","best new songs","lofi chill","bollywood hits","popular songs"];
-  const q=queries[Math.floor(Math.random()*queries.length)];
-  searchInput.value=q; await searchSongs();
-  if(songs.length) playSong(0,true);
+  await loadDiscoverFeed();
+  if(songs.length) playSong(Math.floor(Math.random()*Math.min(songs.length,8)),true);
 });
 
 async function startVoidRadio(query,label){
