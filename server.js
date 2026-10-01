@@ -189,27 +189,43 @@ function buildDiscoverProfile(library) {
     const recent = Array.isArray(library?.recent) ? library.recent : [];
     const favorites = Array.isArray(library?.favorites) ? library.favorites : [];
     const history = Array.isArray(library?.searchHistory) ? library.searchHistory : [];
-    const text = [...recent, ...favorites].map(x => `${x.title || ""} ${x.channel || ""}`).concat(history).join(" ").toLowerCase();
+
+    // Learn taste from the account library. Favorites count more than recent plays,
+    // while search history is a lighter signal. This keeps recommendations personal
+    // without requiring a separate recommendation service.
+    const weightedText = [
+        ...recent.flatMap(x => [`${x?.title || ""} ${x?.channel || ""}`, `${x?.title || ""} ${x?.channel || ""}`]),
+        ...favorites.flatMap(x => [`${x?.title || ""} ${x?.channel || ""}`, `${x?.title || ""} ${x?.channel || ""}`, `${x?.title || ""} ${x?.channel || ""}`]),
+        ...history
+    ].join(" ").toLowerCase();
+
     const categories = [
-        ["Bollywood & Hindi", "bollywood hindi", /bollywood|hindi|arijit|shreya|atif|armaan|jubin|sonu nigam|darshan raval|neha kakkar/],
-        ["Punjabi", "punjabi", /punjabi|sidhu|karan aujla|diljit|shubh|ap dhillon|guru randhawa/],
-        ["Romantic", "romantic love", /romantic|love|ishq|pyaar|romance|heart/],
-        ["Hip-hop & Rap", "indian hip hop rap", /hip.?hop|rap|rap song|badshah|raftaar|divine|emiway|krishna|seedhe maut/],
-        ["Party & Dance", "bollywood party dance", /party|dance|dj|club|remix|desi party/],
-        ["Lo-fi & Chill", "indian lofi chill", /lofi|lo-fi|chill|study|focus|relax/],
-        ["Devotional", "bhajan devotional indian", /bhajan|devotional|mantra|aarti|krishna|shiv|hanuman|spiritual|qawwali/],
-        ["South Indian", "telugu tamil malayalam kannada songs", /telugu|tamil|malayalam|kannada|anirudh|thaman|alluarjun|vijay|rajinikanth/],
+        ["Bollywood & Hindi", "Hindi Bollywood", /bollywood|hindi|arijit|shreya|atif|armaan|jubin|sonu nigam|darshan raval|neha kakkar|pritam|vishal mishra/i],
+        ["Punjabi", "Punjabi", /punjabi|sidhu|karan aujla|diljit|shubh|ap dhillon|guru randhawa|harrdy sandhu|amrit maan/i],
+        ["Romantic", "Hindi romantic", /romantic|love|ishq|pyaar|romance|heart|mohabbat|bekhayali/i],
+        ["Hip-hop & Rap", "Indian hip hop rap", /hip.?hop|rap|badshah|raftaar|divine|emiway|krishna|seedhe maut|mc stan/i],
+        ["Party & Dance", "Hindi party dance", /party|dance|dj|club|remix|desi party|nacho/i],
+        ["Lo-fi & Chill", "Indian lofi chill", /lofi|lo-fi|chill|study|focus|relax|calm/i],
+        ["Devotional", "Indian bhajan devotional", /bhajan|devotional|mantra|aarti|krishna|shiv|hanuman|spiritual|qawwali/i],
+        ["South Indian", "South Indian songs", /telugu|tamil|malayalam|kannada|anirudh|thaman|alluarjun|vijay|rajinikanth|ilayaraja/i],
+        ["Marathi", "Marathi songs", /marathi|marathi song|ajay-atul/i],
+        ["Bengali", "Bengali songs", /bengali|bangla|bengali song/i]
     ];
-    const ranked = categories.map(([label, query, pattern]) => ({label, query, score:(text.match(pattern)||[]).length})).sort((a,b)=>b.score-a.score);
-    const learned = ranked.filter(x=>x.score>0).slice(0,3);
-    const IndianDefault = "latest Hindi Bollywood Punjabi Indian songs";
+
+    const ranked = categories.map(([label, query, pattern]) => ({
+        label, query,
+        score: (weightedText.match(new RegExp(pattern.source, "gi")) || []).length
+    })).sort((a,b) => b.score - a.score);
+
+    const learned = ranked.filter(x => x.score > 0).slice(0, 3);
+    const learnedQueries = learned.map(x => x.query);
     const query = learned.length
-        ? `${learned.map(x=>x.query).join(" ")} latest Indian songs`
-        : `${IndianDefault} 2026`;
+        ? `${learnedQueries.join(" ")} latest Indian songs Hindi music`.replace(/\s+/g, " ").trim()
+        : "latest Indian Hindi Bollywood Punjabi songs 2026";
     const reason = learned.length
-        ? `Based on your listening: ${learned.map(x=>x.label).join(" • ")}`
+        ? `Based on your listening: ${learned.map(x => x.label).join(" • ")}`
         : "Indian music first — VOID will learn your taste as you listen.";
-    return {query, reason, interests: learned.map(x=>x.label)};
+    return {query, reason, interests: learned.map(x => x.label), learnedQueries};
 }
 
 app.get("/api/recommendations", requireAuth, (req,res)=>{
@@ -258,6 +274,60 @@ app.get("/api/discover", requireAuth, async (req,res)=>{
         console.error("Discover error:",error);
         res.status(500).json({error:"Server error while building your discover feed"});
     }
+});
+
+app.get("/api/radio", requireAuth, async (req,res)=>{
+    try {
+        const {u}=findAuthedUser(req);
+        const library=ensureUserLibrary(u);
+        const profile=buildDiscoverProfile(library);
+        const station=String(req.query.station||"chill").slice(0,80);
+
+        // Every station is intentionally India-first. The station changes the mood,
+        // while the user's strongest listening categories are added as the taste layer.
+        const stationMap={
+          "late night chill":"Indian Hindi Bollywood romantic lofi late night songs",
+          "focus study coding music":"Indian Hindi lofi instrumental study focus music",
+          "high energy workout music":"Indian Punjabi Hindi Bollywood workout gym energetic songs",
+          "bollywood hits party mix":"Indian Hindi Bollywood party dance hits",
+          "indie alternative music mix":"Indian indie Hindi Punjabi alternative songs",
+          "romantic love songs mix":"Indian Hindi Bollywood romantic love songs"
+        };
+        const stationQuery=stationMap[station]||`Indian Hindi ${station} songs`;
+        // Keep the station mood, then bias it toward the user's strongest learned
+        // Indian categories. This makes every station adapt to the account rather
+        // than returning the same generic mix for everyone.
+        const taste=(profile.learnedQueries||[]).slice(0,3).join(" ");
+        const query=`${stationQuery} ${taste} Indian songs`.replace(/\s+/g," ").trim();
+        const apiKey=process.env.YOUTUBE_API_KEY;
+        if(!apiKey)return res.status(500).json({error:"YouTube API key is missing"});
+        const url=new URL("https://www.googleapis.com/youtube/v3/search");
+        for(const [k,v] of Object.entries({part:"snippet",type:"video",videoCategoryId:"10",maxResults:"50",q:query,regionCode:"IN",relevanceLanguage:"hi",safeSearch:"moderate",key:apiKey})) url.searchParams.set(k,v);
+        const response=await fetch(url); const data=await response.json();
+        if(!response.ok)return res.status(response.status).json({error:data?.error?.message||"YouTube API error"});
+        const candidates=(data.items||[]).filter(x=>x.id?.videoId);
+        let embeddableIds=new Set(candidates.map(x=>x.id.videoId));
+        if(candidates.length){
+          const su=new URL("https://www.googleapis.com/youtube/v3/videos");
+          su.searchParams.set("part","status"); su.searchParams.set("id",candidates.map(x=>x.id.videoId).join(",")); su.searchParams.set("key",apiKey);
+          const sr=await fetch(su); const sd=await sr.json();
+          if(sr.ok) embeddableIds=new Set((sd.items||[]).filter(x=>x.status?.embeddable===true).map(x=>x.id));
+        }
+
+        // Strict Indian-content gate: a radio station must not fall back to generic
+        // English/global results just because YouTube ranked them highly. Accept
+        // Indian language/script, Indian music terms, or known Indian artists/labels.
+        const indianSignal=/\b(india|indian|hindi|bollywood|punjabi|tamil|telugu|malayalam|kannada|marathi|bengali|bangla|odia|assamese|bhojpuri|rajasthani|gujarati|sindhi|bhajan|devotional|desi|sufi|qawwali|filmi|tollywood|kollywood|mollywood|sandalwood|pollywood|bhangra)\b|[\u0900-\u097F\u0980-\u09FF\u0A80-\u0AFF\u0B80-\u0BFF\u0C00-\u0C7F\u0C80-\u0CFF\u0D00-\u0D7F]/i;
+        const indianArtistSignal=/\b(arijit|shreya|atif|armaan|jubin|sonu nigam|darshan raval|neha kakkar|pritam|vishal mishra|diljit|karan aujla|shubh|ap dhillon|guru randhawa|harrdy sandhu|amrit maan|badshah|raftaar|divine|emiway|krishna|seedhe maut|mc stan|anirudh|a\.r\. rahman|ar rahman|thaman|allu arjun|vijay|rajkumar hirani|t-series|saregama|zee music|sony music india|speed records|desi music factory)\b/i;
+        const results=candidates
+          .filter(x=>embeddableIds.has(x.id.videoId))
+          .filter(item=>{
+            const text=`${item.snippet?.title||""} ${item.snippet?.channelTitle||""}`;
+            return indianSignal.test(text) || indianArtistSignal.test(text);
+          })
+          .map(item=>({id:item.id.videoId,title:item.snippet?.title||"Unknown title",channel:item.snippet?.channelTitle||"YouTube",thumbnail:item.snippet?.thumbnails?.high?.url||item.snippet?.thumbnails?.medium?.url||`https://i.ytimg.com/vi/${item.id.videoId}/hqdefault.jpg`,publishedAt:item.snippet?.publishedAt||""}));
+        res.json({results,query,reason:profile.reason,interests:profile.interests});
+    } catch(e){ console.error("Radio error",e); res.status(500).json({error:"Could not build your personalized Indian radio station"}); }
 });
 
 app.get("/api/lyrics", requireAuth, async (req,res)=>{ try { const artist=String(req.query.artist||""); const title=String(req.query.title||""); if(!title)return res.status(400).json({error:"Song title required"}); const url=new URL("https://lrclib.net/api/get"); url.searchParams.set("artist_name",artist); url.searchParams.set("track_name",title); const r=await fetch(url); if(!r.ok)return res.status(404).json({error:"Lyrics not found"}); const d=await r.json(); res.json({lyrics:d.plainLyrics||d.syncedLyrics||"Lyrics unavailable",syncedLyrics:d.syncedLyrics||""}); } catch(e){ res.status(502).json({error:"Lyrics service unavailable"}); } });

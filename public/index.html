@@ -199,12 +199,12 @@
           <section id="radioPage" class="page">
             <div class="page-heading major-heading"><div><span class="section-label">VOID RADIO</span><h1>Pick a mood.<br><span>We'll pick the music.</span></h1><p>One tap creates a live queue from YouTube.</p></div></div>
             <div class="radio-grid">
-              <button class="radio-card radio-purple" data-radio="late night chill"><span>◐</span><b>Late Night</b><small>Dreamy • ambient • lofi</small></button>
-              <button class="radio-card radio-blue" data-radio="focus study coding music"><span>⌁</span><b>Deep Focus</b><small>Study • coding • concentration</small></button>
-              <button class="radio-card radio-red" data-radio="high energy workout music"><span>↯</span><b>Power Mode</b><small>Gym • energy • motivation</small></button>
-              <button class="radio-card radio-gold" data-radio="bollywood hits party mix"><span>✦</span><b>Bollywood</b><small>Hits • party • desi vibes</small></button>
-              <button class="radio-card radio-green" data-radio="indie alternative music mix"><span>◇</span><b>Indie Orbit</b><small>Alternative • fresh finds</small></button>
-              <button class="radio-card radio-pink" data-radio="romantic love songs mix"><span>♡</span><b>After Hours</b><small>Romantic • slow • emotional</small></button>
+              <button class="radio-card radio-purple" data-radio="late night chill"><span>◐</span><b>Late Night</b><small>Indian • dreamy • romantic • personalized</small></button>
+              <button class="radio-card radio-blue" data-radio="focus study coding music"><span>⌁</span><b>Deep Focus</b><small>Indian • study • lofi • personalized</small></button>
+              <button class="radio-card radio-red" data-radio="high energy workout music"><span>↯</span><b>Power Mode</b><small>Indian • gym • Punjabi • high energy</small></button>
+              <button class="radio-card radio-gold" data-radio="bollywood hits party mix"><span>✦</span><b>Bollywood</b><small>Indian • Bollywood • party • personalized</small></button>
+              <button class="radio-card radio-green" data-radio="indie alternative music mix"><span>◇</span><b>Indie Orbit</b><small>Indian • indie • fresh finds • personalized</small></button>
+              <button class="radio-card radio-pink" data-radio="romantic love songs mix"><span>♡</span><b>After Hours</b><small>Indian • romantic • slow • personalized</small></button>
             </div>
             <div class="radio-now"><div><span class="section-label">LIVE RADIO</span><h2 id="radioTitle">Nothing queued yet</h2><p id="radioDescription">Choose a station and VOID will build a queue.</p></div><button id="radioStopButton" class="secondary-button">Stop radio</button></div>
           </section>
@@ -269,9 +269,6 @@
               <div class="settings-card">
                 <h3>Player</h3>
                 <p>Quick controls for the player.</p>
-                <button id="openPlayerButton" class="secondary-button full">
-                  Open Now Playing
-                </button>
                 <button id="shortcutsButton" class="secondary-button full">
                   Keyboard shortcuts
                 </button>
@@ -351,13 +348,6 @@
         </button>
         <button id="muteButton" class="volume-button" title="Mute">🔊</button>
         <input id="volume" type="range" min="0" max="100" value="80" />
-        <button
-          id="fullscreenPlayerButton"
-          class="volume-button"
-          title="Now Playing"
-        >
-          ↗
-        </button>
       </div>
     </footer>
 
@@ -376,43 +366,6 @@
       </div>
       <div id="queueList" class="queue-list"></div>
     </aside>
-
-    <div id="nowPlayingModal" class="modal hidden">
-      <div class="modal-backdrop" data-close-modal></div>
-      <div class="now-modal">
-        <button class="modal-close" data-close-modal>×</button>
-        <div class="now-modal-art-wrap">
-          <img id="modalThumbnail" src="" alt="" />
-          <div class="visualizer" id="visualizer">
-            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
-            ><i></i><i></i><i></i>
-          </div>
-        </div>
-        <span class="section-label">NOW PLAYING</span>
-        <h2 id="modalTitle">Nothing playing</h2>
-        <p id="modalArtist">—</p>
-        <div class="modal-progress">
-          <span id="modalCurrent">0:00</span
-          ><input
-            id="modalProgress"
-            type="range"
-            min="0"
-            max="100"
-            value="0"
-            step=".1"
-          /><span id="modalDuration">0:00</span>
-        </div>
-        <div class="modal-controls">
-          <button id="modalShuffle">⤨</button><button id="modalPrev">⏮</button
-          ><button id="modalPlay" class="modal-play">▶</button
-          ><button id="modalNext">⏭</button><button id="modalRepeat">↻</button>
-        </div>
-        <div class="modal-links">
-          <button id="lyricsButton">♪ Lyrics</button
-          ><button id="modalQueueButton">♫ Queue</button>
-        </div>
-      </div>
-    </div>
 
     <div id="lyricsModal" class="modal hidden">
       <div class="modal-backdrop" data-close-modal></div>
