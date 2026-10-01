@@ -40,15 +40,8 @@ const favoriteButton = $("favoriteButton"),
   nowPlaying = $("nowPlaying");
 const queueOpenButton = $("queueOpenButton"),
   fullscreenPlayerButton = $("fullscreenPlayerButton"),
-  playerMoreButton = $("playerMoreButton"),
-  miniPlayerButton = $("miniPlayerButton"),
-  compactPlayer = $("compactPlayer"),
-  compactThumbnail = $("compactThumbnail"),
-  compactTitle = $("compactTitle"),
-  compactArtist = $("compactArtist"),
-  compactPlay = $("compactPlay"),
-  compactExpand = $("compactExpand"),
-  compactClose = $("compactClose");
+  playerMoreButton = $("playerMoreButton");
+
 const queuePanel = $("queuePanel"),
   queueOverlay = $("queueOverlay"),
   closeQueue = $("closeQueue"),
@@ -730,10 +723,6 @@ function playSong(index, ensurePlayback = false) {
   playerTitle.textContent = cleanTitle(currentSong.title);
   playerArtist.textContent = currentSong.channel;
   playerThumbnail.src = currentSong.thumbnail;
-  if (compactThumbnail) compactThumbnail.src = currentSong.thumbnail || "";
-  if (compactTitle) compactTitle.textContent = cleanTitle(currentSong.title);
-  if (compactArtist) compactArtist.textContent = currentSong.channel || "VOID Music";
-  compactPlayer?.classList.remove("hidden");
   modalTitle.textContent = cleanTitle(currentSong.title);
   modalArtist.textContent = currentSong.channel;
   modalThumbnail.src = currentSong.thumbnail;
@@ -1450,14 +1439,6 @@ function initSettings() {
 function openNowPlaying() {
   nowPlayingModal.classList.remove("hidden");
 }
-miniPlayerButton?.addEventListener("click", () => {
-  if (!currentSong) return showToast("Play a song first");
-  document.body.classList.toggle("compact-player-mode");
-  compactPlayer?.classList.toggle("hidden", !document.body.classList.contains("compact-player-mode"));
-});
-compactPlay?.addEventListener("click", () => playButton.click());
-compactExpand?.addEventListener("click", openNowPlaying);
-compactClose?.addEventListener("click", () => document.body.classList.remove("compact-player-mode"));
 fullscreenPlayerButton.addEventListener("click", openNowPlaying);
 $("openPlayerButton").addEventListener("click", openNowPlaying);
 async function openLyrics() {

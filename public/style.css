@@ -1981,8 +1981,6 @@ body.light-mode .artist-fill{background:linear-gradient(90deg,#6d4aff,#0891b2)!i
 .sidebar nav{min-height:max-content;}
 .sidebar-bottom{position:relative;bottom:auto;}
 .sidebar::-webkit-scrollbar{width:7px}.sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:99px}.sidebar::-webkit-scrollbar-track{background:transparent}
-.compact-player{position:fixed;left:18px;right:18px;bottom:92px;z-index:1200;display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--void-line,#25252d);background:rgba(10,10,14,.94);backdrop-filter:blur(22px);border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.4)}
-.compact-player.hidden{display:none}.compact-player img{width:48px;height:48px;border-radius:10px;object-fit:cover}.compact-info{min-width:0;flex:1}.compact-info strong,.compact-info span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.compact-info span{font-size:12px;opacity:.55;margin-top:3px}.compact-player button{border:0;background:rgba(255,255,255,.07);color:inherit;width:38px;height:38px;border-radius:50%;cursor:pointer}.compact-player .compact-play{background:#fff;color:#000}.compact-player-mode .player{transform:translateY(calc(100% - 54px));opacity:.72;transition:.25s}.player{transition:transform .25s,opacity .25s}
 .now-modal{width:min(720px,92vw);max-height:90vh;overflow:auto}.now-modal-art-wrap{width:min(430px,70vw);aspect-ratio:1;margin:0 auto 24px}.now-modal-art-wrap img{width:100%;height:100%;object-fit:cover;border-radius:28px;box-shadow:0 30px 100px rgba(0,0,0,.45)}
-@media(max-width:700px){.compact-player{left:8px;right:8px;bottom:76px}.sidebar{padding-bottom:120px}.now-modal{width:94vw}.now-modal-art-wrap{width:78vw}}
-body.light-mode .compact-player{background:rgba(255,255,255,.95);border-color:#dfe3ea;box-shadow:0 18px 50px rgba(31,41,55,.16)}body.light-mode .compact-player button{background:#eef1f5;color:#111827}body.light-mode .compact-player .compact-play{background:#111827;color:#fff}
+@media(max-width:700px){.sidebar{padding-bottom:120px}.now-modal{width:94vw}.now-modal-art-wrap{width:78vw}}
+
