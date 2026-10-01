@@ -173,12 +173,12 @@ const publicPlaylistsFile = path.join(dataDir, "public-playlists.json");
 if (!fs.existsSync(publicPlaylistsFile)) fs.writeFileSync(publicPlaylistsFile, "[]");
 function readPublicPlaylists(){ try { const x=JSON.parse(fs.readFileSync(publicPlaylistsFile,"utf8")); return Array.isArray(x)?x:[]; } catch { return []; } }
 function writePublicPlaylists(x){ const t=publicPlaylistsFile+".tmp"; fs.writeFileSync(t,JSON.stringify(x,null,2)); fs.renameSync(t,publicPlaylistsFile); }
-function defaultLibrary(){ return {favorites:[],queue:[],recent:[],playCounts:{},playlists:{},searchHistory:[],settings:{theme:"dark",autoplayQueue:true,rememberVolume:true,crossfade:0,sleepTimer:0},profile:{bio:"",avatar:"",publicProfile:false},lastPlayed:null}; }
-function ensureUserLibrary(user){ user.library = Object.assign(defaultLibrary(), user.library || {}); user.library.favorites = Array.isArray(user.library.favorites)?user.library.favorites:[]; user.library.queue=Array.isArray(user.library.queue)?user.library.queue:[]; user.library.recent=Array.isArray(user.library.recent)?user.library.recent:[]; user.library.playCounts=user.library.playCounts&&typeof user.library.playCounts==='object'?user.library.playCounts:{}; user.library.searchHistory=Array.isArray(user.library.searchHistory)?user.library.searchHistory:[]; user.library.playlists=user.library.playlists && typeof user.library.playlists==='object'?user.library.playlists:{}; user.library.settings=Object.assign(defaultLibrary().settings,user.library.settings||{}); user.library.profile=Object.assign(defaultLibrary().profile,user.library.profile||{}); return user.library; }
+function defaultLibrary(){ return {favorites:[],queue:[],recent:[],playlists:{},searchHistory:[],settings:{theme:"dark",autoplayQueue:true,rememberVolume:true,crossfade:0,sleepTimer:0},profile:{bio:"",avatar:"",publicProfile:false},lastPlayed:null}; }
+function ensureUserLibrary(user){ user.library = Object.assign(defaultLibrary(), user.library || {}); user.library.favorites = Array.isArray(user.library.favorites)?user.library.favorites:[]; user.library.queue=Array.isArray(user.library.queue)?user.library.queue:[]; user.library.recent=Array.isArray(user.library.recent)?user.library.recent:[]; user.library.searchHistory=Array.isArray(user.library.searchHistory)?user.library.searchHistory:[]; user.library.playlists=user.library.playlists && typeof user.library.playlists==='object'?user.library.playlists:{}; user.library.settings=Object.assign(defaultLibrary().settings,user.library.settings||{}); user.library.profile=Object.assign(defaultLibrary().profile,user.library.profile||{}); return user.library; }
 function findAuthedUser(req){ const users=readUsers(); const u=users.find(x=>x.id===req.user.id); return {users,u}; }
 
 app.get("/api/library", requireAuth, (req,res)=>{ const {u}=findAuthedUser(req); if(!u) return res.status(404).json({error:"Account not found"}); const library=ensureUserLibrary(u); writeUsers(readUsers().map(x=>x.id===u.id?u:x)); res.json({library}); });
-app.put("/api/library", requireAuth, (req,res)=>{ const {users,u}=findAuthedUser(req); if(!u) return res.status(404).json({error:"Account not found"}); const incoming=req.body?.library||{}; const library=ensureUserLibrary(u); for(const key of ["favorites","queue","recent","playCounts","playlists","searchHistory","settings","profile","lastPlayed"]){ if(incoming[key]!==undefined) library[key]=incoming[key]; } u.library=library; u.updatedAt=new Date().toISOString(); writeUsers(users); res.json({ok:true,library}); });
+app.put("/api/library", requireAuth, (req,res)=>{ const {users,u}=findAuthedUser(req); if(!u) return res.status(404).json({error:"Account not found"}); const incoming=req.body?.library||{}; const library=ensureUserLibrary(u); for(const key of ["favorites","queue","recent","playlists","searchHistory","settings","profile","lastPlayed"]){ if(incoming[key]!==undefined) library[key]=incoming[key]; } u.library=library; u.updatedAt=new Date().toISOString(); writeUsers(users); res.json({ok:true,library}); });
 app.patch("/api/profile", requireAuth, (req,res)=>{ const {users,u}=findAuthedUser(req); if(!u)return res.status(404).json({error:"Account not found"}); const l=ensureUserLibrary(u); l.profile=Object.assign(l.profile, {bio:String(req.body?.bio||"").slice(0,240),avatar:String(req.body?.avatar||"").slice(0,500000),publicProfile:Boolean(req.body?.publicProfile)}); writeUsers(users); res.json({profile:l.profile}); });
 app.get("/api/profile/:id", (req,res)=>{ const u=readUsers().find(x=>x.id===req.params.id); if(!u)return res.status(404).json({error:"Profile not found"}); const l=ensureUserLibrary(u); res.json({id:u.id,name:u.name,email:u.email,bio:l.profile.bio,avatar:l.profile.avatar,publicProfile:l.profile.publicProfile,playlists:l.profile.publicProfile?Object.entries(l.playlists).map(([name,songs])=>({name,songs})):[]}); });
 app.get("/api/stats", requireAuth, (req,res)=>{ const {u}=findAuthedUser(req); const l=ensureUserLibrary(u); const recent=l.recent||[]; const counts={}; recent.forEach(x=>{const k=x.channel||"Unknown";counts[k]=(counts[k]||0)+1;}); const topArtists=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([artist,plays])=>({artist,plays})); res.json({totalPlays:recent.length,totalFavorites:(l.favorites||[]).length,totalPlaylists:Object.keys(l.playlists||{}).length,topArtists,history:recent.slice(0,50)}); });
@@ -189,167 +189,106 @@ function buildDiscoverProfile(library) {
     const recent = Array.isArray(library?.recent) ? library.recent : [];
     const favorites = Array.isArray(library?.favorites) ? library.favorites : [];
     const history = Array.isArray(library?.searchHistory) ? library.searchHistory : [];
-    const playCounts = library?.playCounts && typeof library.playCounts === "object" ? library.playCounts : {};
-
+    const text = [...recent, ...favorites].map(x => `${x.title || ""} ${x.channel || ""}`).concat(history).join(" ").toLowerCase();
     const categories = [
-        ["Bollywood & Hindi", "Hindi Bollywood", /bollywood|hindi|arijit|shreya|atif|armaan|jubin|sonu nigam|darshan raval|neha kakkar|pritam|vishal mishra/i],
-        ["Punjabi", "Punjabi", /punjabi|sidhu|karan aujla|diljit|shubh|ap dhillon|guru randhawa|harrdy sandhu|amrit maan/i],
-        ["Romantic", "Hindi romantic", /romantic|love|ishq|pyaar|romance|heart|mohabbat|bekhayali/i],
-        ["Hip-hop & Rap", "Indian hip hop rap", /hip.?hop|rap|badshah|raftaar|divine|emiway|krishna|seedhe maut|mc stan/i],
-        ["Party & Dance", "Hindi party dance", /party|dance|dj|club|remix|desi party|nacho/i],
-        ["Lo-fi & Chill", "Indian lofi chill", /lofi|lo-fi|chill|study|focus|relax|calm/i],
-        ["Devotional", "Indian devotional", /bhajan|devotional|mantra|aarti|krishna|shiv|hanuman|spiritual|qawwali/i],
-        ["South Indian", "South Indian", /telugu|tamil|malayalam|kannada|anirudh|thaman|alluarjun|vijay|rajinikanth|ilayaraja/i],
-        ["Marathi", "Marathi", /marathi|ajay-atul/i],
-        ["Bengali", "Bengali", /bengali|bangla/i],
-        ["Bhojpuri", "Bhojpuri", /bhojpuri|khesari|pawan singh|neelkamal/i],
-        ["Gujarati", "Gujarati", /gujarati|garba/i]
+        ["Bollywood & Hindi", "bollywood hindi", /bollywood|hindi|arijit|shreya|atif|armaan|jubin|sonu nigam|darshan raval|neha kakkar/],
+        ["Punjabi", "punjabi", /punjabi|sidhu|karan aujla|diljit|shubh|ap dhillon|guru randhawa/],
+        ["Romantic", "romantic love", /romantic|love|ishq|pyaar|romance|heart/],
+        ["Hip-hop & Rap", "indian hip hop rap", /hip.?hop|rap|rap song|badshah|raftaar|divine|emiway|krishna|seedhe maut/],
+        ["Party & Dance", "bollywood party dance", /party|dance|dj|club|remix|desi party/],
+        ["Lo-fi & Chill", "indian lofi chill", /lofi|lo-fi|chill|study|focus|relax/],
+        ["Devotional", "bhajan devotional indian", /bhajan|devotional|mantra|aarti|krishna|shiv|hanuman|spiritual|qawwali/],
+        ["South Indian", "telugu tamil malayalam kannada songs", /telugu|tamil|malayalam|kannada|anirudh|thaman|alluarjun|vijay|rajinikanth/],
     ];
-
-    const textPieces = [];
-    for (const x of recent) textPieces.push(`${x?.title || ""} ${x?.channel || ""}`);
-    for (const x of favorites) textPieces.push(`${x?.title || ""} ${x?.channel || ""}`);
-    for (const h of history) textPieces.push(String(h || ""));
-    for (const entry of Object.values(playCounts)) textPieces.push(`${entry?.song?.title || ""} ${entry?.song?.channel || ""}`.repeat(Math.min(4, Math.max(1, Number(entry?.count || 1)))));
-    const weightedText = textPieces.join(" ").toLowerCase();
-
-    const ranked = categories.map(([label, query, pattern]) => ({
-        label, query,
-        score: (weightedText.match(new RegExp(pattern.source, "gi")) || []).length
-    })).sort((a,b) => b.score - a.score);
-
-    const learned = ranked.filter(x => x.score > 0).slice(0, 3);
-    const learnedQueries = learned.map(x => x.query);
-    const topArtists = Object.values(playCounts)
-        .filter(x => x?.song?.channel)
-        .sort((a,b) => Number(b.count||0) - Number(a.count||0))
-        .slice(0, 3)
-        .map(x => x.song.channel);
-
-    const topSongs = Object.values(playCounts)
-        .filter(x => x?.song?.title)
-        .sort((a,b) => Number(b.count||0) - Number(a.count||0))
-        .slice(0, 3)
-        .map(x => x.song.title);
-
-    const taste = [...learnedQueries, ...topArtists].join(" ");
+    const ranked = categories.map(([label, query, pattern]) => ({label, query, score:(text.match(pattern)||[]).length})).sort((a,b)=>b.score-a.score);
+    const learned = ranked.filter(x=>x.score>0).slice(0,3);
+    const IndianDefault = "latest Hindi Bollywood Punjabi Indian songs";
     const query = learned.length
-        ? `Indian ${taste} songs music -english -american -kpop`.replace(/\s+/g, " ").trim()
-        : "Indian Hindi Bollywood Punjabi songs latest music -english -american -kpop";
+        ? `${learned.map(x=>x.query).join(" ")} latest Indian songs`
+        : `${IndianDefault} 2026`;
     const reason = learned.length
-        ? `Based on your listening: ${learned.map(x => x.label).join(" • ")}${topArtists.length ? ` • ${topArtists[0]}` : ""}`
-        : "Indian music first — play a few songs and VOID will learn your taste.";
-    return {query, reason, interests: learned.map(x => x.label), learnedQueries, topArtists, topSongs};
-}
-
-const INDIAN_SIGNAL = /\b(india|indian|hindi|bollywood|punjabi|tamil|telugu|malayalam|kannada|marathi|bengali|bangla|odia|assamese|bhojpuri|rajasthani|gujarati|sindhi|bhajan|devotional|desi|sufi|qawwali|filmi|tollywood|kollywood|mollywood|sandalwood|pollywood|bhangra|garba)\b|[\u0900-\u097F\u0980-\u09FF\u0A80-\u0AFF\u0B80-\u0BFF\u0C00-\u0C7F\u0C80-\u0CFF\u0D00-\u0D7F]/i;
-const INDIAN_ARTIST_SIGNAL = /\b(arijit|shreya|atif|armaan|jubin|sonu nigam|darshan raval|neha kakkar|pritam|vishal mishra|diljit|karan aujla|shubh|ap dhillon|guru randhawa|harrdy sandhu|amrit maan|badshah|raftaar|divine|emiway|krishna|seedhe maut|mc stan|anirudh|a\.r\. rahman|ar rahman|thaman|allu arjun|vijay|rajkumar hirani|t-series|saregama|zee music|sony music india|speed records|desi music factory)\b/i;
-
-function scoreIndianCandidate(item, profile, stationTerms = "") {
-    const text = `${item.snippet?.title || ""} ${item.snippet?.channelTitle || ""}`;
-    let score = 0;
-    if (INDIAN_SIGNAL.test(text)) score += 8;
-    if (INDIAN_ARTIST_SIGNAL.test(text)) score += 8;
-    const lower = text.toLowerCase();
-    for (const q of [...(profile.learnedQueries || []), ...(profile.topArtists || []), ...String(stationTerms).split(/\s+/)]) {
-        const token = String(q || "").toLowerCase().trim();
-        if (token.length >= 3 && lower.includes(token)) score += 3;
-    }
-    for (const song of profile.topSongs || []) {
-        const words = String(song).toLowerCase().split(/\s+/).filter(w => w.length >= 4);
-        score += words.filter(w => lower.includes(w)).length;
-    }
-    if (/official|music video|lyrical|audio|song|songs|jukebox|mix/i.test(text)) score += 1;
-    return score;
-}
-
-async function youtubeIndianSearch(query, profile, stationTerms = "", maxResults = 50) {
-    const apiKey = process.env.YOUTUBE_API_KEY;
-    if (!apiKey) throw new Error("YouTube API key is missing");
-    const url = new URL("https://www.googleapis.com/youtube/v3/search");
-    url.searchParams.set("part", "snippet");
-    url.searchParams.set("type", "video");
-    url.searchParams.set("videoCategoryId", "10");
-    url.searchParams.set("maxResults", String(Math.min(50, maxResults)));
-    url.searchParams.set("q", query);
-    url.searchParams.set("regionCode", "IN");
-    url.searchParams.set("relevanceLanguage", "hi");
-    url.searchParams.set("safeSearch", "moderate");
-    url.searchParams.set("key", apiKey);
-    const response = await fetch(url);
-    const data = await response.json();
-    if (!response.ok) throw new Error(data?.error?.message || "YouTube API error");
-
-    const candidates = (data.items || []).filter(x => x.id?.videoId);
-    if (!candidates.length) return [];
-    const statusUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
-    statusUrl.searchParams.set("part", "status");
-    statusUrl.searchParams.set("id", candidates.map(x => x.id.videoId).join(","));
-    statusUrl.searchParams.set("key", apiKey);
-    const sr = await fetch(statusUrl);
-    const sd = await sr.json();
-    const embeddable = sr.ok ? new Set((sd.items || []).filter(x => x.status?.embeddable === true).map(x => x.id)) : new Set(candidates.map(x => x.id.videoId));
-
-    return candidates
-        .filter(x => embeddable.has(x.id.videoId))
-        .map(item => ({
-            item,
-            score: scoreIndianCandidate(item, profile, stationTerms),
-            song: {
-                id: item.id.videoId,
-                title: item.snippet?.title || "Unknown title",
-                channel: item.snippet?.channelTitle || "YouTube",
-                thumbnail: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || `https://i.ytimg.com/vi/${item.id.videoId}/hqdefault.jpg`,
-                publishedAt: item.snippet?.publishedAt || ""
-            }
-        }))
-        .filter(x => INDIAN_SIGNAL.test(`${x.item.snippet?.title || ""} ${x.item.snippet?.channelTitle || ""}`) || INDIAN_ARTIST_SIGNAL.test(`${x.item.snippet?.title || ""} ${x.item.snippet?.channelTitle || ""}`))
-        .sort((a,b) => b.score - a.score)
-        .map(x => x.song);
+        ? `Based on your listening: ${learned.map(x=>x.label).join(" • ")}`
+        : "Indian music first — VOID will learn your taste as you listen.";
+    return {query, reason, interests: learned.map(x=>x.label)};
 }
 
 app.get("/api/recommendations", requireAuth, (req,res)=>{
     const {u}=findAuthedUser(req); const l=ensureUserLibrary(u); const profile=buildDiscoverProfile(l);
-    res.json({query:profile.query, reason:profile.reason, interests:profile.interests, topArtists:profile.topArtists, topSongs:profile.topSongs});
+    res.json({query:profile.query, reason:profile.reason, interests:profile.interests});
 });
 
 app.get("/api/discover", requireAuth, async (req,res)=>{
     try {
-        const {u}=findAuthedUser(req); const library=ensureUserLibrary(u); const profile=buildDiscoverProfile(library);
-        let results = await youtubeIndianSearch(profile.query, profile, profile.learnedQueries.join(" "), 50);
-        if (results.length < 8) {
-            const fallback = `Indian ${profile.learnedQueries.slice(0,2).join(" ")} songs Hindi Bollywood Punjabi -english -american -kpop`;
-            results = await youtubeIndianSearch(fallback, profile, profile.learnedQueries.join(" "), 50);
+        const {u}=findAuthedUser(req);
+        const library=ensureUserLibrary(u);
+        const profile=buildDiscoverProfile(library);
+        const apiKey=process.env.YOUTUBE_API_KEY;
+        if(!apiKey) return res.status(500).json({error:"YouTube API key is missing"});
+        const url=new URL("https://www.googleapis.com/youtube/v3/search");
+        url.searchParams.set("part","snippet");
+        url.searchParams.set("type","video");
+        url.searchParams.set("videoCategoryId","10");
+        url.searchParams.set("maxResults","24");
+        url.searchParams.set("q",profile.query);
+        url.searchParams.set("regionCode","IN");
+        url.searchParams.set("relevanceLanguage","hi");
+        url.searchParams.set("key",apiKey);
+        const response=await fetch(url);
+        const data=await response.json();
+        if(!response.ok) return res.status(response.status).json({error:data?.error?.message||"YouTube API error"});
+        const candidates=(data.items||[]).filter(item=>item.id?.videoId);
+        let embeddableIds=new Set(candidates.map(item=>item.id.videoId));
+        if(candidates.length){
+            const statusUrl=new URL("https://www.googleapis.com/youtube/v3/videos");
+            statusUrl.searchParams.set("part","status");
+            statusUrl.searchParams.set("id",candidates.map(x=>x.id.videoId).join(","));
+            statusUrl.searchParams.set("key",apiKey);
+            const sr=await fetch(statusUrl); const sd=await sr.json();
+            if(sr.ok) embeddableIds=new Set((sd.items||[]).filter(x=>x.status?.embeddable===true).map(x=>x.id));
         }
-        res.json({results:results.slice(0,24), query:profile.query, reason:profile.reason, interests:profile.interests, topArtists:profile.topArtists, topSongs:profile.topSongs});
+        const results=candidates.filter(x=>embeddableIds.has(x.id.videoId)).map(item=>({
+            id:item.id.videoId,
+            title:item.snippet?.title||"Unknown title",
+            channel:item.snippet?.channelTitle||"YouTube",
+            thumbnail:item.snippet?.thumbnails?.high?.url||item.snippet?.thumbnails?.medium?.url||item.snippet?.thumbnails?.default?.url||`https://i.ytimg.com/vi/${item.id.videoId}/hqdefault.jpg`,
+            publishedAt:item.snippet?.publishedAt||""
+        }));
+        res.json({results,query:profile.query,reason:profile.reason,interests:profile.interests});
     } catch(error){
-        console.error("Discover error:",error); res.status(500).json({error:error.message || "Server error while building your discover feed"});
+        console.error("Discover error:",error);
+        res.status(500).json({error:"Server error while building your discover feed"});
     }
 });
 
 app.get("/api/radio", requireAuth, async (req,res)=>{
     try {
         const {u}=findAuthedUser(req); const library=ensureUserLibrary(u); const profile=buildDiscoverProfile(library);
-        const station=String(req.query.station||"late night chill").slice(0,80).toLowerCase();
+        const station=String(req.query.station||"chill").slice(0,80);
         const stationMap={
-          "late night chill": {label:"Late Night", mood:"romantic lofi late night", indian:"Hindi Bollywood Punjabi"},
-          "focus study coding music": {label:"Deep Focus", mood:"lofi focus study calm", indian:"Hindi Indian instrumental"},
-          "high energy workout music": {label:"Power Mode", mood:"high energy workout gym party", indian:"Punjabi Hindi Bollywood"},
-          "bollywood hits party mix": {label:"Bollywood", mood:"Bollywood party dance hits", indian:"Hindi Bollywood"},
-          "indie alternative music mix": {label:"Indie Orbit", mood:"indie alternative chill fresh", indian:"Indian Hindi Punjabi"},
-          "romantic love songs mix": {label:"After Hours", mood:"romantic love slow emotional", indian:"Hindi Bollywood Punjabi"}
+          "late night chill":"late night Hindi Indian Bollywood lofi romantic chill songs",
+          "focus study coding music":"Indian Hindi lofi study focus instrumental Bollywood chill",
+          "high energy workout music":"Indian Punjabi Hindi Bollywood workout gym party energetic songs",
+          "bollywood hits party mix":"latest Hindi Bollywood Indian party dance hits",
+          "indie alternative music mix":"Indian indie Hindi Punjabi alternative songs",
+          "romantic love songs mix":"Hindi Bollywood Indian romantic love songs",
         };
-        const st=stationMap[station] || {label:"VOID Radio",mood:station,indian:"Indian Hindi Bollywood Punjabi"};
-        const dominant = (profile.learnedQueries || []).slice(0,2).join(" ");
-        const artistBoost = (profile.topArtists || []).slice(0,2).join(" ");
-        const query = `${st.indian} ${dominant} ${artistBoost} ${st.mood} songs -english -american -kpop`.replace(/\s+/g," ").trim();
-        let results = await youtubeIndianSearch(query, profile, `${dominant} ${st.mood}`, 50);
-        if (results.length < 8) {
-            const fallback = `Indian ${dominant} ${st.mood} songs Hindi Punjabi Bollywood -english -american`;
-            results = await youtubeIndianSearch(fallback, profile, `${dominant} ${st.mood}`, 50);
+        const stationQuery=stationMap[station]||`Indian Hindi Bollywood ${station}`;
+        const learned=(profile.interests||[]).join(" ");
+        const query=`Indian Hindi Bollywood ${learned} ${stationQuery}`.replace(/\s+/g," ").trim();
+        const apiKey=process.env.YOUTUBE_API_KEY; if(!apiKey)return res.status(500).json({error:"YouTube API key is missing"});
+        const url=new URL("https://www.googleapis.com/youtube/v3/search");
+        for(const [k,v] of Object.entries({part:"snippet",type:"video",videoCategoryId:"10",maxResults:"24",q:query,regionCode:"IN",relevanceLanguage:"hi",key:apiKey})) url.searchParams.set(k,v);
+        const response=await fetch(url); const data=await response.json();
+        if(!response.ok)return res.status(response.status).json({error:data?.error?.message||"YouTube API error"});
+        const candidates=(data.items||[]).filter(x=>x.id?.videoId);
+        let embeddableIds=new Set(candidates.map(x=>x.id.videoId));
+        if(candidates.length){
+          const su=new URL("https://www.googleapis.com/youtube/v3/videos"); su.searchParams.set("part","status"); su.searchParams.set("id",candidates.map(x=>x.id.videoId).join(",")); su.searchParams.set("key",apiKey);
+          const sr=await fetch(su); const sd=await sr.json(); if(sr.ok) embeddableIds=new Set((sd.items||[]).filter(x=>x.status?.embeddable===true).map(x=>x.id));
         }
-        res.json({results:results.slice(0,30),query,reason:profile.learnedQueries.length ? `Personalized from your top taste: ${profile.interests.join(" • ")}` : "Indian radio — play more songs and VOID will personalize it.", interests:profile.interests, topArtists:profile.topArtists, station:st.label});
-    } catch(e){ console.error("Radio error",e); res.status(500).json({error:e.message || "Could not build your personalized Indian radio station"}); }
+        const results=candidates.filter(x=>embeddableIds.has(x.id.videoId)).map(item=>({id:item.id.videoId,title:item.snippet?.title||"Unknown title",channel:item.snippet?.channelTitle||"YouTube",thumbnail:item.snippet?.thumbnails?.high?.url||item.snippet?.thumbnails?.medium?.url||`https://i.ytimg.com/vi/${item.id.videoId}/hqdefault.jpg`,publishedAt:item.snippet?.publishedAt||""}));
+        res.json({results,query,reason:profile.reason,interests:profile.interests});
+    } catch(e){ console.error("Radio error",e); res.status(500).json({error:"Could not build your Indian radio station"}); }
 });
 
 app.get("/api/lyrics", requireAuth, async (req,res)=>{ try { const artist=String(req.query.artist||""); const title=String(req.query.title||""); if(!title)return res.status(400).json({error:"Song title required"}); const url=new URL("https://lrclib.net/api/get"); url.searchParams.set("artist_name",artist); url.searchParams.set("track_name",title); const r=await fetch(url); if(!r.ok)return res.status(404).json({error:"Lyrics not found"}); const d=await r.json(); res.json({lyrics:d.plainLyrics||d.syncedLyrics||"Lyrics unavailable",syncedLyrics:d.syncedLyrics||""}); } catch(e){ res.status(502).json({error:"Lyrics service unavailable"}); } });
