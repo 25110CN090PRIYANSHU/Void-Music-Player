@@ -43,3 +43,7 @@ The visualizer is a playback animation and does not attempt to capture audio fro
 
 ### Important mobile background-playback limitation
 VOID currently uses the YouTube IFrame Player API as its audio source. Whether audio continues after a mobile browser is minimized or the screen is locked is controlled by the browser/YouTube and cannot be guaranteed by JavaScript. True reliable background audio requires using an audio source that the browser allows to continue in the background (for example, an `<audio>` stream served by the application) rather than a YouTube iframe.
+
+
+## Account-synced library
+Favorites, playlists, queue, recently played, search history, and playback settings are now stored on the server per authenticated account. Logging into the same VOID account on another device loads the same library. The first device with an existing local library automatically migrates it to the account.

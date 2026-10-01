@@ -11,12 +11,66 @@ const PORT = process.env.PORT || 3000;
 const publicDir = path.join(__dirname, "public");
 const dataDir = path.join(__dirname, "data");
 const usersFile = path.join(dataDir, "users.json");
+const librariesFile = path.join(dataDir, "libraries.json");
 const sessions = new Map();
 
 app.use(express.json({ limit: "1mb" }));
 
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 if (!fs.existsSync(usersFile)) fs.writeFileSync(usersFile, "[]");
+if (!fs.existsSync(librariesFile)) fs.writeFileSync(librariesFile, "{}");
+
+
+function readLibraries() {
+    try {
+        const libraries = JSON.parse(fs.readFileSync(librariesFile, "utf8"));
+        return libraries && typeof libraries === "object" && !Array.isArray(libraries) ? libraries : {};
+    } catch {
+        return {};
+    }
+}
+
+function writeLibraries(libraries) {
+    const temporaryFile = `${librariesFile}.tmp`;
+    fs.writeFileSync(temporaryFile, JSON.stringify(libraries, null, 2), "utf8");
+    fs.renameSync(temporaryFile, librariesFile);
+}
+
+function cleanLibrary(library = {}) {
+    const cleanSongs = (value) => Array.isArray(value) ? value.filter(Boolean).slice(0, 500).map((song) => ({
+        id: String(song.id || ""),
+        title: String(song.title || "Unknown title").slice(0, 300),
+        channel: String(song.channel || "YouTube").slice(0, 200),
+        thumbnail: String(song.thumbnail || "").slice(0, 1000),
+        publishedAt: String(song.publishedAt || "").slice(0, 100),
+        ...(song.playedAt ? { playedAt: Number(song.playedAt) || Date.now() } : {})
+    })).filter((song) => song.id) : [];
+
+    const playlists = {};
+    if (library.playlists && typeof library.playlists === "object" && !Array.isArray(library.playlists)) {
+        for (const [name, value] of Object.entries(library.playlists).slice(0, 100)) {
+            const cleanName = String(name).trim().slice(0, 100);
+            if (cleanName) playlists[cleanName] = cleanSongs(value);
+        }
+    }
+
+    return {
+        initialized: true,
+        favorites: cleanSongs(library.favorites),
+        queue: cleanSongs(library.queue),
+        recent: cleanSongs(library.recent),
+        searchHistory: Array.isArray(library.searchHistory)
+            ? library.searchHistory.map((x) => String(x).slice(0, 200)).filter(Boolean).slice(0, 100)
+            : [],
+        playlists,
+        settings: library.settings && typeof library.settings === "object" ? {
+            theme: library.settings.theme === "light" ? "light" : "dark",
+            autoplayQueue: library.settings.autoplayQueue !== false,
+            rememberVolume: library.settings.rememberVolume !== false
+        } : { theme: "dark", autoplayQueue: true, rememberVolume: true },
+        updatedAt: new Date().toISOString()
+    };
+}
 
 function readUsers() {
     try {
@@ -164,6 +218,34 @@ app.get("/api/health", (req, res) => {
         ok: true,
         service: "VOID Music Player"
     });
+});
+
+// Account-synced music library. Unlike localStorage, this data follows the
+// authenticated account to every phone, browser, and computer.
+app.get("/api/library", requireAuth, (req, res) => {
+    const libraries = readLibraries();
+    const library = libraries[req.user.id];
+    if (!library) {
+        return res.json({ initialized: false });
+    }
+    res.json({ initialized: true, library: cleanLibrary(library) });
+});
+
+app.put("/api/library", requireAuth, (req, res) => {
+    try {
+        const libraries = readLibraries();
+        const library = cleanLibrary(req.body || {});
+        const serialized = JSON.stringify(library);
+        if (Buffer.byteLength(serialized, "utf8") > 4 * 1024 * 1024) {
+            return res.status(413).json({ error: "Library is too large." });
+        }
+        libraries[req.user.id] = library;
+        writeLibraries(libraries);
+        res.json({ ok: true, library });
+    } catch (error) {
+        console.error("Library save error:", error);
+        res.status(500).json({ error: "Unable to save your music library." });
+    }
 });
 
 // YouTube search

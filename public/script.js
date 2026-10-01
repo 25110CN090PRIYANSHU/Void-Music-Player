@@ -115,6 +115,11 @@ let settings = Object.assign(
   load("voidSettings", {}),
 );
 
+let librarySyncReady = false;
+let librarySyncTimer = null;
+let librarySyncInFlight = false;
+let librarySyncPending = false;
+
 function load(key, fallback) {
   try {
     return JSON.parse(localStorage.getItem(key)) ?? fallback;
@@ -122,8 +127,113 @@ function load(key, fallback) {
     return fallback;
   }
 }
+
 function save(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+  if (librarySyncReady) scheduleLibrarySync();
+}
+
+function getLibraryPayload() {
+  return {
+    favorites,
+    queue,
+    recent,
+    searchHistory,
+    playlists,
+    settings: {
+      theme: settings.theme,
+      autoplayQueue: settings.autoplayQueue,
+      rememberVolume: settings.rememberVolume,
+    },
+  };
+}
+
+function applyLibrary(library) {
+  if (!library || typeof library !== "object") return;
+  favorites = Array.isArray(library.favorites) ? library.favorites : [];
+  queue = Array.isArray(library.queue) ? library.queue : [];
+  recent = Array.isArray(library.recent) ? library.recent : [];
+  searchHistory = Array.isArray(library.searchHistory) ? library.searchHistory : [];
+  playlists = library.playlists && typeof library.playlists === "object"
+    ? library.playlists
+    : {};
+  settings = Object.assign(
+    { theme: "dark", autoplayQueue: true, rememberVolume: true },
+    library.settings || {},
+  );
+
+  localStorage.setItem("voidFavorites", JSON.stringify(favorites));
+  localStorage.setItem("voidQueue", JSON.stringify(queue));
+  localStorage.setItem("voidRecent", JSON.stringify(recent));
+  localStorage.setItem("voidSearchHistory", JSON.stringify(searchHistory));
+  localStorage.setItem("voidPlaylists", JSON.stringify(playlists));
+  localStorage.setItem("voidSettings", JSON.stringify(settings));
+}
+
+async function syncLibraryNow() {
+  if (librarySyncInFlight) {
+    librarySyncPending = true;
+    return;
+  }
+  librarySyncInFlight = true;
+  try {
+    const response = await fetch("/api/library", { credentials: "same-origin" });
+    if (!response.ok) return;
+    const data = await response.json();
+
+    if (data.initialized && data.library) {
+      // The server is the source of truth once an account has a library.
+      applyLibrary(data.library);
+      updateBadges();
+      renderQueue();
+      renderFavorites();
+      renderRecent();
+      renderQueuePage();
+      renderPlaylists();
+      initSettings();
+    } else {
+      // First device using this account: migrate its existing local library.
+      await fetch("/api/library", {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(getLibraryPayload()),
+      });
+    }
+    librarySyncReady = true;
+  } catch (error) {
+    console.warn("VOID library sync unavailable:", error);
+    // Keep localStorage working offline; it will sync on the next successful load.
+    librarySyncReady = true;
+  } finally {
+    librarySyncInFlight = false;
+    if (librarySyncPending) {
+      librarySyncPending = false;
+      scheduleLibrarySync();
+    }
+  }
+}
+
+function scheduleLibrarySync() {
+  clearTimeout(librarySyncTimer);
+  librarySyncTimer = setTimeout(syncLibraryToServer, 500);
+}
+
+async function syncLibraryToServer() {
+  if (!librarySyncReady) return;
+  try {
+    const response = await fetch("/api/library", {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(getLibraryPayload()),
+    });
+    if (!response.ok) {
+      console.warn("VOID library save failed:", response.status);
+    }
+  } catch (error) {
+    console.warn("VOID library save unavailable:", error);
+  }
 }
 function userInitial(name = "P") {
   return name.trim().split(/\s+/)[0]?.charAt(0).toUpperCase() || "P";
@@ -148,6 +258,7 @@ async function loadProfile() {
     const data = await response.json();
     localStorage.setItem("voidUser", JSON.stringify(data.user));
     updateProfileUI(data.user);
+    await syncLibraryNow();
   } catch {
     try { updateProfileUI(JSON.parse(localStorage.getItem("voidUser"))); } catch {}
   }
