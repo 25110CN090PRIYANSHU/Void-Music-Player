@@ -39,34 +39,13 @@ const favoriteButton = $("favoriteButton"),
   playingIndicator = $("playingIndicator"),
   nowPlaying = $("nowPlaying");
 const queueOpenButton = $("queueOpenButton"),
-  fullscreenPlayerButton = $("fullscreenPlayerButton"),
-  playerMoreButton = $("playerMoreButton"),
-  miniPlayerButton = $("miniPlayerButton"),
-  compactPlayer = $("compactPlayer"),
-  compactThumbnail = $("compactThumbnail"),
-  compactTitle = $("compactTitle"),
-  compactArtist = $("compactArtist"),
-  compactPlay = $("compactPlay"),
-  compactExpand = $("compactExpand"),
-  compactClose = $("compactClose");
+  playerMoreButton = $("playerMoreButton");
 const queuePanel = $("queuePanel"),
   queueOverlay = $("queueOverlay"),
   closeQueue = $("closeQueue"),
   queueList = $("queueList"),
   queueCount = $("queueCount"),
   clearQueue = $("clearQueue");
-const nowPlayingModal = $("nowPlayingModal"),
-  modalThumbnail = $("modalThumbnail"),
-  modalTitle = $("modalTitle"),
-  modalArtist = $("modalArtist");
-const modalProgress = $("modalProgress"),
-  modalCurrent = $("modalCurrent"),
-  modalDuration = $("modalDuration");
-const modalPlay = $("modalPlay"),
-  modalPrev = $("modalPrev"),
-  modalNext = $("modalNext"),
-  modalShuffle = $("modalShuffle"),
-  modalRepeat = $("modalRepeat");
 const lyricsModal = $("lyricsModal"),
   lyricsTitle = $("lyricsTitle"),
   lyricsText = $("lyricsText");
@@ -521,9 +500,7 @@ function handlePlayerState(event) {
       setPlayingUI(false);
       stopProgressUpdater();
       progress.value = 0;
-      modalProgress.value = 0;
       currentTime.textContent = "0:00";
-      modalCurrent.textContent = "0:00";
       const endedVideoId = event.target?.getVideoData?.()?.video_id;
       if (endedVideoId && endedVideoId !== currentSong?.id) break;
       autoPlayNextSong("youtube-ended");
@@ -533,14 +510,9 @@ function handlePlayerState(event) {
 function setPlayingUI(playing) {
   isPlaying = playing;
   playButton.textContent = playing ? "❚❚" : "▶";
-  modalPlay.textContent = playing ? "❚❚" : "▶";
   nowPlaying.classList.toggle("playing", playing);
-  [modalShuffle, shuffleButton].forEach((b) =>
-    b.classList.toggle("active", isShuffle),
-  );
-  [modalRepeat, repeatButton].forEach((b) =>
-    b.classList.toggle("active", repeatMode !== "off"),
-  );
+  shuffleButton.classList.toggle("active", isShuffle);
+  repeatButton.classList.toggle("active", repeatMode !== "off");
   updateMediaSession();
 }
 
@@ -730,21 +702,10 @@ function playSong(index, ensurePlayback = false) {
   playerTitle.textContent = cleanTitle(currentSong.title);
   playerArtist.textContent = currentSong.channel;
   playerThumbnail.src = currentSong.thumbnail;
-  if (compactThumbnail) compactThumbnail.src = currentSong.thumbnail || "";
-  if (compactTitle) compactTitle.textContent = cleanTitle(currentSong.title);
-  if (compactArtist) compactArtist.textContent = currentSong.channel || "VOID Music";
-  compactPlayer?.classList.remove("hidden");
-  modalTitle.textContent = cleanTitle(currentSong.title);
-  modalArtist.textContent = currentSong.channel;
-  modalThumbnail.src = currentSong.thumbnail;
   progress.value = 0;
-  modalProgress.value = 0;
   setRangeProgress(progress, 0);
-  setRangeProgress(modalProgress, 0);
   currentTime.textContent = "0:00";
-  modalCurrent.textContent = "0:00";
   duration.textContent = "0:00";
-  modalDuration.textContent = "0:00";
   endedSongId = null;
   updateFavoriteButton();
   addRecent(currentSong);
@@ -841,11 +802,6 @@ nextButton.addEventListener("click", nextSong);
 previousButton.addEventListener("click", previousSong);
 shuffleButton.addEventListener("click", toggleShuffle);
 repeatButton.addEventListener("click", cycleRepeat);
-modalPlay.addEventListener("click", () => playButton.click());
-modalNext.addEventListener("click", nextSong);
-modalPrev.addEventListener("click", previousSong);
-modalShuffle.addEventListener("click", toggleShuffle);
-modalRepeat.addEventListener("click", cycleRepeat);
 function toggleShuffle() {
   isShuffle = !isShuffle;
   setPlayingUI(isPlaying);
@@ -933,13 +889,9 @@ function updateProgress() {
   const pct = Math.min(100, Math.max(0, (cur / total) * 100));
   progress.value = pct;
 
-  modalProgress.value = pct;
   setRangeProgress(progress, pct);
-  setRangeProgress(modalProgress, pct);
   currentTime.textContent = formatTime(cur);
   duration.textContent = formatTime(total);
-  modalCurrent.textContent = formatTime(cur);
-  modalDuration.textContent = formatTime(total);
   // Keep autoplay working if a browser misses the IFrame API ENDED event.
   if (
     cur >= total - 0.5 &&
@@ -971,21 +923,6 @@ progress.addEventListener("input", () => {
   }
 });
 progress.addEventListener("change", () => seekFromRange(progress.value));
-modalProgress.addEventListener("input", () => {
-  modalProgress.value = progress.value;
-  progress.value = modalProgress.value;
-  setRangeProgress(progress, Number(progress.value));
-  setRangeProgress(modalProgress, Number(modalProgress.value));
-  const total = playerReady ? player.getDuration() : 0;
-  if (total)
-    modalCurrent.textContent = formatTime(
-      (Number(modalProgress.value) / 100) * total,
-    );
-});
-modalProgress.addEventListener("change", () =>
-  seekFromRange(modalProgress.value),
-);
-
 function updateFavoriteButton() {
   const yes = currentSong && isFavorite(currentSong);
   favoriteButton.textContent = yes ? "♥" : "♡";
@@ -1447,19 +1384,6 @@ function initSettings() {
   applyTheme();
 }
 
-function openNowPlaying() {
-  nowPlayingModal.classList.remove("hidden");
-}
-miniPlayerButton?.addEventListener("click", () => {
-  if (!currentSong) return showToast("Play a song first");
-  document.body.classList.toggle("compact-player-mode");
-  compactPlayer?.classList.toggle("hidden", !document.body.classList.contains("compact-player-mode"));
-});
-compactPlay?.addEventListener("click", () => playButton.click());
-compactExpand?.addEventListener("click", openNowPlaying);
-compactClose?.addEventListener("click", () => document.body.classList.remove("compact-player-mode"));
-fullscreenPlayerButton.addEventListener("click", openNowPlaying);
-$("openPlayerButton").addEventListener("click", openNowPlaying);
 async function openLyrics() {
   lyricsTitle.textContent = currentSong ? cleanTitle(currentSong.title) : "Lyrics";
   lyricsText.textContent = currentSong ? "Finding lyrics…" : "Play a song first.";
@@ -1474,10 +1398,6 @@ async function openLyrics() {
   } catch(e) { lyricsText.textContent=`${e.message}. Lyrics availability depends on the provider.`; }
 }
 $("lyricsButton").addEventListener("click", openLyrics);
-$("modalQueueButton").addEventListener("click", () => {
-  closeAllModals();
-  openQueue();
-});
 $("shortcutsButton").addEventListener("click", () =>
   shortcutsModal.classList.remove("hidden"),
 );
