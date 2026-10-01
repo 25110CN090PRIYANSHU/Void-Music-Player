@@ -11,66 +11,12 @@ const PORT = process.env.PORT || 3000;
 const publicDir = path.join(__dirname, "public");
 const dataDir = path.join(__dirname, "data");
 const usersFile = path.join(dataDir, "users.json");
-const librariesFile = path.join(dataDir, "libraries.json");
 const sessions = new Map();
 
 app.use(express.json({ limit: "1mb" }));
 
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 if (!fs.existsSync(usersFile)) fs.writeFileSync(usersFile, "[]");
-if (!fs.existsSync(librariesFile)) fs.writeFileSync(librariesFile, "{}");
-
-
-function readLibraries() {
-    try {
-        const libraries = JSON.parse(fs.readFileSync(librariesFile, "utf8"));
-        return libraries && typeof libraries === "object" && !Array.isArray(libraries) ? libraries : {};
-    } catch {
-        return {};
-    }
-}
-
-function writeLibraries(libraries) {
-    const temporaryFile = `${librariesFile}.tmp`;
-    fs.writeFileSync(temporaryFile, JSON.stringify(libraries, null, 2), "utf8");
-    fs.renameSync(temporaryFile, librariesFile);
-}
-
-function cleanLibrary(library = {}) {
-    const cleanSongs = (value) => Array.isArray(value) ? value.filter(Boolean).slice(0, 500).map((song) => ({
-        id: String(song.id || ""),
-        title: String(song.title || "Unknown title").slice(0, 300),
-        channel: String(song.channel || "YouTube").slice(0, 200),
-        thumbnail: String(song.thumbnail || "").slice(0, 1000),
-        publishedAt: String(song.publishedAt || "").slice(0, 100),
-        ...(song.playedAt ? { playedAt: Number(song.playedAt) || Date.now() } : {})
-    })).filter((song) => song.id) : [];
-
-    const playlists = {};
-    if (library.playlists && typeof library.playlists === "object" && !Array.isArray(library.playlists)) {
-        for (const [name, value] of Object.entries(library.playlists).slice(0, 100)) {
-            const cleanName = String(name).trim().slice(0, 100);
-            if (cleanName) playlists[cleanName] = cleanSongs(value);
-        }
-    }
-
-    return {
-        initialized: true,
-        favorites: cleanSongs(library.favorites),
-        queue: cleanSongs(library.queue),
-        recent: cleanSongs(library.recent),
-        searchHistory: Array.isArray(library.searchHistory)
-            ? library.searchHistory.map((x) => String(x).slice(0, 200)).filter(Boolean).slice(0, 100)
-            : [],
-        playlists,
-        settings: library.settings && typeof library.settings === "object" ? {
-            theme: library.settings.theme === "light" ? "light" : "dark",
-            autoplayQueue: library.settings.autoplayQueue !== false,
-            rememberVolume: library.settings.rememberVolume !== false
-        } : { theme: "dark", autoplayQueue: true, rememberVolume: true },
-        updatedAt: new Date().toISOString()
-    };
-}
 
 function readUsers() {
     try {
@@ -220,32 +166,49 @@ app.get("/api/health", (req, res) => {
     });
 });
 
-// Account-synced music library. Unlike localStorage, this data follows the
-// authenticated account to every phone, browser, and computer.
-app.get("/api/library", requireAuth, (req, res) => {
-    const libraries = readLibraries();
-    const library = libraries[req.user.id];
-    if (!library) {
-        return res.json({ initialized: false });
-    }
-    res.json({ initialized: true, library: cleanLibrary(library) });
-});
 
-app.put("/api/library", requireAuth, (req, res) => {
-    try {
-        const libraries = readLibraries();
-        const library = cleanLibrary(req.body || {});
-        const serialized = JSON.stringify(library);
-        if (Buffer.byteLength(serialized, "utf8") > 4 * 1024 * 1024) {
-            return res.status(413).json({ error: "Library is too large." });
-        }
-        libraries[req.user.id] = library;
-        writeLibraries(libraries);
-        res.json({ ok: true, library });
-    } catch (error) {
-        console.error("Library save error:", error);
-        res.status(500).json({ error: "Unable to save your music library." });
-    }
+
+// ===================== VOID CLOUD / V3 API =====================
+const publicPlaylistsFile = path.join(dataDir, "public-playlists.json");
+if (!fs.existsSync(publicPlaylistsFile)) fs.writeFileSync(publicPlaylistsFile, "[]");
+function readPublicPlaylists(){ try { const x=JSON.parse(fs.readFileSync(publicPlaylistsFile,"utf8")); return Array.isArray(x)?x:[]; } catch { return []; } }
+function writePublicPlaylists(x){ const t=publicPlaylistsFile+".tmp"; fs.writeFileSync(t,JSON.stringify(x,null,2)); fs.renameSync(t,publicPlaylistsFile); }
+function defaultLibrary(){ return {favorites:[],queue:[],recent:[],playlists:{},searchHistory:[],settings:{theme:"dark",autoplayQueue:true,rememberVolume:true,crossfade:0,sleepTimer:0},profile:{bio:"",avatar:"",publicProfile:false},lastPlayed:null}; }
+function ensureUserLibrary(user){ user.library = Object.assign(defaultLibrary(), user.library || {}); user.library.favorites = Array.isArray(user.library.favorites)?user.library.favorites:[]; user.library.queue=Array.isArray(user.library.queue)?user.library.queue:[]; user.library.recent=Array.isArray(user.library.recent)?user.library.recent:[]; user.library.searchHistory=Array.isArray(user.library.searchHistory)?user.library.searchHistory:[]; user.library.playlists=user.library.playlists && typeof user.library.playlists==='object'?user.library.playlists:{}; user.library.settings=Object.assign(defaultLibrary().settings,user.library.settings||{}); user.library.profile=Object.assign(defaultLibrary().profile,user.library.profile||{}); return user.library; }
+function findAuthedUser(req){ const users=readUsers(); const u=users.find(x=>x.id===req.user.id); return {users,u}; }
+
+app.get("/api/library", requireAuth, (req,res)=>{ const {u}=findAuthedUser(req); if(!u) return res.status(404).json({error:"Account not found"}); const library=ensureUserLibrary(u); writeUsers(readUsers().map(x=>x.id===u.id?u:x)); res.json({library}); });
+app.put("/api/library", requireAuth, (req,res)=>{ const {users,u}=findAuthedUser(req); if(!u) return res.status(404).json({error:"Account not found"}); const incoming=req.body?.library||{}; const library=ensureUserLibrary(u); for(const key of ["favorites","queue","recent","playlists","searchHistory","settings","profile","lastPlayed"]){ if(incoming[key]!==undefined) library[key]=incoming[key]; } u.library=library; u.updatedAt=new Date().toISOString(); writeUsers(users); res.json({ok:true,library}); });
+app.patch("/api/profile", requireAuth, (req,res)=>{ const {users,u}=findAuthedUser(req); if(!u)return res.status(404).json({error:"Account not found"}); const l=ensureUserLibrary(u); l.profile=Object.assign(l.profile, {bio:String(req.body?.bio||"").slice(0,240),avatar:String(req.body?.avatar||"").slice(0,500000),publicProfile:Boolean(req.body?.publicProfile)}); writeUsers(users); res.json({profile:l.profile}); });
+app.get("/api/profile/:id", (req,res)=>{ const u=readUsers().find(x=>x.id===req.params.id); if(!u)return res.status(404).json({error:"Profile not found"}); const l=ensureUserLibrary(u); res.json({id:u.id,name:u.name,email:u.email,bio:l.profile.bio,avatar:l.profile.avatar,publicProfile:l.profile.publicProfile,playlists:l.profile.publicProfile?Object.entries(l.playlists).map(([name,songs])=>({name,songs})):[]}); });
+app.get("/api/stats", requireAuth, (req,res)=>{ const {u}=findAuthedUser(req); const l=ensureUserLibrary(u); const recent=l.recent||[]; const counts={}; recent.forEach(x=>{const k=x.channel||"Unknown";counts[k]=(counts[k]||0)+1;}); const topArtists=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([artist,plays])=>({artist,plays})); res.json({totalPlays:recent.length,totalFavorites:(l.favorites||[]).length,totalPlaylists:Object.keys(l.playlists||{}).length,topArtists,history:recent.slice(0,50)}); });
+app.post("/api/devices", requireAuth, (req,res)=>{ const {users,u}=findAuthedUser(req); const device={id:String(req.body?.id||crypto.randomUUID()),name:String(req.body?.name||"VOID Device").slice(0,80),platform:String(req.body?.platform||"Web"),lastSeen:new Date().toISOString()}; u.devices=Array.isArray(u.devices)?u.devices:[]; u.devices=[device,...u.devices.filter(x=>x.id!==device.id)].slice(0,10); writeUsers(users); res.json({devices:u.devices}); });
+app.get("/api/devices", requireAuth, (req,res)=>{ const {u}=findAuthedUser(req); res.json({devices:u?.devices||[]}); });
+app.delete("/api/devices/:id", requireAuth, (req,res)=>{ const {users,u}=findAuthedUser(req); if(!u)return res.status(404).json({error:"Account not found"}); u.devices=(u.devices||[]).filter(x=>x.id!==req.params.id); writeUsers(users); res.json({devices:u.devices}); });
+app.get("/api/recommendations", requireAuth, (req,res)=>{ const {u}=findAuthedUser(req); const l=ensureUserLibrary(u); const text=[...(l.searchHistory||[]),...(l.recent||[]).map(x=>x.title+" "+x.channel)].join(" "); const q=text.includes("lofi")?"lofi chill beats":text.includes("workout")?"workout music mix":text.includes("bollywood")?"latest bollywood songs":"trending music"; res.json({query:q,reason:"Based on your recent listening activity"}); });
+app.get("/api/lyrics", requireAuth, async (req,res)=>{ try { const artist=String(req.query.artist||""); const title=String(req.query.title||""); if(!title)return res.status(400).json({error:"Song title required"}); const url=new URL("https://lrclib.net/api/get"); url.searchParams.set("artist_name",artist); url.searchParams.set("track_name",title); const r=await fetch(url); if(!r.ok)return res.status(404).json({error:"Lyrics not found"}); const d=await r.json(); res.json({lyrics:d.plainLyrics||d.syncedLyrics||"Lyrics unavailable",syncedLyrics:d.syncedLyrics||""}); } catch(e){ res.status(502).json({error:"Lyrics service unavailable"}); } });
+app.get("/api/public-playlists", (req,res)=>res.json({playlists:readPublicPlaylists().map(x=>({id:x.id,name:x.name,owner:x.owner,updatedAt:x.updatedAt,songs:x.songs}))}));
+app.post("/api/public-playlists", requireAuth, (req,res)=>{ const {u}=findAuthedUser(req); const list=readPublicPlaylists(); const item={id:crypto.randomUUID(),name:String(req.body?.name||"VOID Playlist").slice(0,80),owner:{id:u.id,name:u.name},songs:Array.isArray(req.body?.songs)?req.body.songs.slice(0,500):[],updatedAt:new Date().toISOString()}; list.unshift(item); writePublicPlaylists(list.slice(0,100)); res.json({playlist:item}); });
+
+// Optional Google OAuth integration: set GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET and add a provider.
+app.get("/api/auth/providers", (req,res)=>res.json({google:Boolean(process.env.GOOGLE_CLIENT_ID),email:true}));
+const googleStates = new Map();
+app.get("/api/auth/google", (req,res)=>{
+  if(!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) return res.status(503).send("Google sign-in is not configured. Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI.");
+  const state=crypto.randomBytes(24).toString("hex"); googleStates.set(state,Date.now()+300000);
+  const redirect=process.env.GOOGLE_REDIRECT_URI || `${req.protocol}://${req.get("host")}/api/auth/google/callback`;
+  const u=new URL("https://accounts.google.com/o/oauth2/v2/auth"); u.searchParams.set("client_id",process.env.GOOGLE_CLIENT_ID);u.searchParams.set("redirect_uri",redirect);u.searchParams.set("response_type","code");u.searchParams.set("scope","openid email profile");u.searchParams.set("state",state); res.redirect(u.toString());
+});
+app.get("/api/auth/google/callback", async (req,res)=>{
+ try{
+  const state=String(req.query.state||""); if(!googleStates.has(state)||googleStates.get(state)<Date.now()) return res.status(400).send("Google sign-in state expired."); googleStates.delete(state);
+  const redirect=process.env.GOOGLE_REDIRECT_URI || `${req.protocol}://${req.get("host")}/api/auth/google/callback`;
+  const body=new URLSearchParams({code:String(req.query.code||""),client_id:process.env.GOOGLE_CLIENT_ID,client_secret:process.env.GOOGLE_CLIENT_SECRET,redirect_uri:redirect,grant_type:"authorization_code"});
+  const tokenRes=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body}); const tokens=await tokenRes.json(); if(!tokenRes.ok) throw new Error(tokens.error_description||"Google token exchange failed");
+  const infoRes=await fetch(`https://openidconnect.googleapis.com/v1/userinfo?access_token=${encodeURIComponent(tokens.access_token)}`); const info=await infoRes.json(); if(!infoRes.ok||!info.email) throw new Error("Google profile could not be read");
+  const users=readUsers(); let user=users.find(x=>normalizeEmail(x.email)===normalizeEmail(info.email)); if(!user){user={id:crypto.randomUUID(),name:info.name||info.email.split("@")[0],email:normalizeEmail(info.email),salt:crypto.randomBytes(16).toString("hex"),hash:crypto.randomBytes(64).toString("hex"),createdAt:new Date().toISOString(),googleId:info.sub};users.push(user)} else {user.googleId=info.sub;user.name=info.name||user.name;}
+  writeUsers(users); setSessionCookie(res,createSession(user)); res.redirect("/");
+ }catch(e){console.error("Google OAuth error",e);res.status(500).send("Google sign-in failed. Check OAuth settings.");}
 });
 
 // YouTube search

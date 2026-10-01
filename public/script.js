@@ -110,15 +110,12 @@ let favorites = load("voidFavorites", []);
 let recent = load("voidRecent", []);
 let searchHistory = load("voidSearchHistory", []);
 let playlists = load("voidPlaylists", {});
+let cloudReady = false;
+let cloudSyncTimer = null;
 let settings = Object.assign(
   { theme: "dark", autoplayQueue: true, rememberVolume: true },
   load("voidSettings", {}),
 );
-
-let librarySyncReady = false;
-let librarySyncTimer = null;
-let librarySyncInFlight = false;
-let librarySyncPending = false;
 
 function load(key, fallback) {
   try {
@@ -127,114 +124,36 @@ function load(key, fallback) {
     return fallback;
   }
 }
-
 function save(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
-  if (librarySyncReady) scheduleLibrarySync();
+  if (cloudReady && ["voidFavorites","voidQueue","voidRecent","voidPlaylists","voidSearchHistory","voidSettings"].includes(key)) scheduleCloudSync();
 }
-
-function getLibraryPayload() {
-  return {
-    favorites,
-    queue,
-    recent,
-    searchHistory,
-    playlists,
-    settings: {
-      theme: settings.theme,
-      autoplayQueue: settings.autoplayQueue,
-      rememberVolume: settings.rememberVolume,
-    },
-  };
+function scheduleCloudSync(){
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer=setTimeout(syncCloudLibrary,350);
 }
-
-function applyLibrary(library) {
-  if (!library || typeof library !== "object") return;
-  favorites = Array.isArray(library.favorites) ? library.favorites : [];
-  queue = Array.isArray(library.queue) ? library.queue : [];
-  recent = Array.isArray(library.recent) ? library.recent : [];
-  searchHistory = Array.isArray(library.searchHistory) ? library.searchHistory : [];
-  playlists = library.playlists && typeof library.playlists === "object"
-    ? library.playlists
-    : {};
-  settings = Object.assign(
-    { theme: "dark", autoplayQueue: true, rememberVolume: true },
-    library.settings || {},
-  );
-
-  localStorage.setItem("voidFavorites", JSON.stringify(favorites));
-  localStorage.setItem("voidQueue", JSON.stringify(queue));
-  localStorage.setItem("voidRecent", JSON.stringify(recent));
-  localStorage.setItem("voidSearchHistory", JSON.stringify(searchHistory));
-  localStorage.setItem("voidPlaylists", JSON.stringify(playlists));
-  localStorage.setItem("voidSettings", JSON.stringify(settings));
+async function syncCloudLibrary(){
+  if(!cloudReady) return;
+  try{
+    await fetch("/api/library",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({library:{favorites,queue,recent,playlists,searchHistory,settings,lastPlayed:currentSong?{...normalizeSong(currentSong),savedAt:Date.now()}:null}})});
+  }catch(e){ console.warn("VOID cloud sync failed",e); }
 }
-
-async function syncLibraryNow() {
-  if (librarySyncInFlight) {
-    librarySyncPending = true;
-    return;
-  }
-  librarySyncInFlight = true;
-  try {
-    const response = await fetch("/api/library", { credentials: "same-origin" });
-    if (!response.ok) return;
-    const data = await response.json();
-
-    if (data.initialized && data.library) {
-      // The server is the source of truth once an account has a library.
-      applyLibrary(data.library);
-      updateBadges();
-      renderQueue();
-      renderFavorites();
-      renderRecent();
-      renderQueuePage();
-      renderPlaylists();
-      initSettings();
-    } else {
-      // First device using this account: migrate its existing local library.
-      await fetch("/api/library", {
-        method: "PUT",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(getLibraryPayload()),
-      });
+async function loadCloudLibrary(){
+  try{
+    const r=await fetch("/api/library"); if(!r.ok) return;
+    const d=await r.json(); const c=d.library||{};
+    const local={favorites,queue,recent,playlists,searchHistory,settings};
+    const cloudHas= (c.favorites?.length||c.queue?.length||c.recent?.length||Object.keys(c.playlists||{}).length||c.searchHistory?.length);
+    if(!cloudHas && (local.favorites.length||local.queue.length||local.recent.length||Object.keys(local.playlists).length||local.searchHistory.length)){
+      cloudReady=true; await syncCloudLibrary(); return;
     }
-    librarySyncReady = true;
-  } catch (error) {
-    console.warn("VOID library sync unavailable:", error);
-    // Keep localStorage working offline; it will sync on the next successful load.
-    librarySyncReady = true;
-  } finally {
-    librarySyncInFlight = false;
-    if (librarySyncPending) {
-      librarySyncPending = false;
-      scheduleLibrarySync();
-    }
-  }
+    favorites=Array.isArray(c.favorites)?c.favorites:[]; queue=Array.isArray(c.queue)?c.queue:[]; recent=Array.isArray(c.recent)?c.recent:[]; playlists=c.playlists&&typeof c.playlists==='object'?c.playlists:{}; searchHistory=Array.isArray(c.searchHistory)?c.searchHistory:[]; settings=Object.assign(settings,c.settings||{});
+    save("voidFavorites",favorites); save("voidQueue",queue); save("voidRecent",recent); save("voidPlaylists",playlists); save("voidSearchHistory",searchHistory); save("voidSettings",settings);
+    cloudReady=true;
+    updateBadges(); renderQueue(); renderFavorites(); renderRecent(); renderQueuePage(); renderPlaylists(); initSettings();
+  }catch(e){ console.warn("VOID cloud library unavailable",e); cloudReady=true; }
 }
 
-function scheduleLibrarySync() {
-  clearTimeout(librarySyncTimer);
-  librarySyncTimer = setTimeout(syncLibraryToServer, 500);
-}
-
-async function syncLibraryToServer() {
-  if (!librarySyncReady) return;
-  try {
-    const response = await fetch("/api/library", {
-      method: "PUT",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(getLibraryPayload()),
-    });
-    if (!response.ok) {
-      console.warn("VOID library save failed:", response.status);
-    }
-  } catch (error) {
-    console.warn("VOID library save unavailable:", error);
-  }
-}
 function userInitial(name = "P") {
   return name.trim().split(/\s+/)[0]?.charAt(0).toUpperCase() || "P";
 }
@@ -258,7 +177,8 @@ async function loadProfile() {
     const data = await response.json();
     localStorage.setItem("voidUser", JSON.stringify(data.user));
     updateProfileUI(data.user);
-    await syncLibraryNow();
+    await loadCloudLibrary();
+    registerDevice();
   } catch {
     try { updateProfileUI(JSON.parse(localStorage.getItem("voidUser"))); } catch {}
   }
@@ -1492,15 +1412,18 @@ function openNowPlaying() {
 }
 fullscreenPlayerButton.addEventListener("click", openNowPlaying);
 $("openPlayerButton").addEventListener("click", openNowPlaying);
-function openLyrics() {
-  lyricsTitle.textContent = currentSong
-    ? cleanTitle(currentSong.title)
-    : "Lyrics";
-  lyricsText.textContent = currentSong
-    ? `Lyrics for "${cleanTitle(currentSong.title)}" are not automatically fetched by this build. Use the official YouTube video or connect a licensed lyrics provider.`
-    : "Play a song first.";
+async function openLyrics() {
+  lyricsTitle.textContent = currentSong ? cleanTitle(currentSong.title) : "Lyrics";
+  lyricsText.textContent = currentSong ? "Finding lyrics…" : "Play a song first.";
   lyricsModal.classList.add("lyrics-fullscreen");
   lyricsModal.classList.remove("hidden");
+  if(!currentSong) return;
+  try {
+    const r=await fetch(`/api/lyrics?artist=${encodeURIComponent(currentSong.channel||"")}&title=${encodeURIComponent(cleanTitle(currentSong.title))}`);
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||"Lyrics not found");
+    lyricsText.textContent=d.lyrics||"Lyrics unavailable.";
+  } catch(e) { lyricsText.textContent=`${e.message}. Lyrics availability depends on the provider.`; }
 }
 $("lyricsButton").addEventListener("click", openLyrics);
 $("modalQueueButton").addEventListener("click", () => {
@@ -1633,6 +1556,12 @@ document.addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() === "f" && currentSong) toggleFavorite(currentSong);
   if (e.key.toLowerCase() === "q") openQueue();
 });
+
+
+async function registerDevice(){
+  try{ const id=localStorage.getItem("voidDeviceId")||crypto.randomUUID(); localStorage.setItem("voidDeviceId",id); await fetch("/api/devices",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,name:navigator.userAgent.includes("Mobile")?"VOID Mobile":"VOID Web",platform:navigator.platform})}); }catch{}
+}
+window.VOID={playSong,playCollection,toggleFavorite,addToQueue,openAddToPlaylist,searchSongs,openNowPlaying,openLyrics,showToast,getState:()=>({currentSong,favorites,queue,recent,playlists,settings})};
 
 updateBadges();
 renderQueue();

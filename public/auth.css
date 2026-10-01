@@ -207,3 +207,5 @@ input:focus {
     display: block;
   }
 }
+
+.google-auth{width:100%;margin-top:10px;padding:13px 16px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:#fff;color:#111;font-weight:700;cursor:pointer}

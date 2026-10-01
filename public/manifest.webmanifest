@@ -1,0 +1,3 @@
+{
+  "name":"VOID Music Player","short_name":"VOID","start_url":"/","display":"standalone","background_color":"#080808","theme_color":"#080808","description":"VOID cloud music player","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}

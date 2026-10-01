@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#080808" />
     <meta name="description" content="VOID — a premium YouTube music player." />
     <title>VOID Music</title>
+    <link rel="manifest" href="manifest.webmanifest" />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -29,6 +30,7 @@
             <button class="nav-item" data-page="playlists">
               <span>▣</span><span>Playlists</span>
             </button>
+            <button class="nav-item" data-page="hub"><span>✦</span><span>VOID Hub</span></button>
           </div>
 
           <div class="nav-section">
@@ -69,7 +71,7 @@
               placeholder="Search songs, artists, albums..."
               autocomplete="off"
             />
-            <button id="searchButton">Search</button>
+            <button id="voiceSearchButton" title="Voice search">🎙</button><button id="searchButton">Search</button>
             <div id="searchSuggestions" class="search-suggestions hidden"></div>
           </div>
 
@@ -190,6 +192,24 @@
             <div id="playlistsGrid" class="playlist-grid"></div>
           </section>
 
+
+          <section id="hubPage" class="page">
+            <div class="page-heading"><div><span class="section-label">VOID 3.0</span><h1>Your Music Universe</h1><p>Discover, personalize, sync and understand your listening across devices.</p></div></div>
+            <div class="feature-grid">
+              <article class="feature-card feature-wide"><span>🤖 SMART MIX</span><h3>Made for your mood</h3><p id="smartMixReason">VOID learns from your searches and recent listening.</p><div class="feature-actions"><button class="primary-button small" id="smartPlayButton">▶ Play smart mix</button><button class="secondary-button" id="moodWorkout">Workout</button><button class="secondary-button" id="moodChill">Chill</button><button class="secondary-button" id="moodStudy">Study</button></div></article>
+              <article class="feature-card"><span>📊 YOUR MUSIC</span><h3>Listening analytics</h3><div class="stats-big" id="statsTotal">0</div><p>recent plays</p><div id="topArtists" class="mini-list"></div></article>
+              <article class="feature-card"><span>👤 PROFILE</span><h3 id="hubProfileName">Your profile</h3><p id="hubProfileBio">Make your profile yours.</p><button class="secondary-button full" id="editProfileButton">Edit profile</button></article>
+              <article class="feature-card"><span>📱 DEVICES</span><h3>Where you're signed in</h3><div id="deviceList" class="mini-list"></div><button class="secondary-button full" id="refreshDevicesButton">Refresh devices</button></article>
+              <article class="feature-card feature-wide"><span>🌐 COMMUNITY</span><h3>Public playlists</h3><p>Publish a playlist and browse public VOID collections.</p><div class="feature-actions"><button class="primary-button small" id="publishPlaylistButton">Publish a playlist</button><button class="secondary-button" id="browsePublicButton">Browse public playlists</button></div><div id="publicPlaylistList" class="mini-grid"></div></article>
+              <article class="feature-card"><span>⚡ QUICK TOOLS</span><h3>Player extras</h3><div class="tool-buttons"><button id="sleepTimerButton" class="secondary-button full">⏱ Sleep timer</button><button id="installPwaButton" class="secondary-button full">⬇ Install VOID</button><button id="statsButton" class="secondary-button full">📊 Refresh stats</button></div></article>
+            </div>
+          </section>
+
+          <section id="profilePage" class="page">
+            <div class="page-heading"><div><span class="section-label">ACCOUNT</span><h1>VOID Profile</h1><p>Control your public identity and shared playlists.</p></div></div>
+            <div class="profile-editor-card"><div class="profile-avatar-edit" id="profileEditorAvatar">V</div><div class="profile-fields"><label>Name<input id="profileEditName" disabled></label><label>Email<input id="profileEditEmail" disabled></label><label>Bio<textarea id="profileEditBio" maxlength="240" placeholder="Tell people about your music..."></textarea></label><label class="toggle-row"><span>Public profile</span><input id="publicProfileToggle" type="checkbox"><i></i></label><button id="saveProfileButton" class="primary-button small">Save profile</button></div></div>
+          </section>
+
           <section id="settingsPage" class="page">
             <div class="page-heading">
               <div>
@@ -217,6 +237,7 @@
                   ><span>Autoplay queue</span
                   ><input id="autoplayToggle" type="checkbox" checked /><i></i
                 ></label>
+                <label class="toggle-row"><span>Crossfade</span><select id="crossfadeSelect"><option value="0">Off</option><option value="2">2 sec</option><option value="5">5 sec</option><option value="10">10 sec</option></select></label>
                 <label class="toggle-row"
                   ><span>Remember volume</span
                   ><input
@@ -454,6 +475,7 @@
     </div>
 
     <script src="script.js"></script>
+    <script src="features.js"></script>
     <script src="https://www.youtube.com/iframe_api"></script>
   </body>
 </html>

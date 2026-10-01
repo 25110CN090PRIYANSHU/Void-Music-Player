@@ -1,49 +1,43 @@
-# VOID Music Player — MAX Edition
+# VOID Music Player 3.0
 
-## What was upgraded
-- Favorites library with persistent storage
-- Queue with add/remove/reorder/clear
-- Recently Played history
-- Playlists with create/delete/add-song
-- Search suggestions from local history/favorites
-- Search result actions and context menu
-- Shuffle + Repeat Off/All/One
-- Full Now Playing modal
-- Queue drawer
-- Keyboard shortcuts
-- Theme settings
-- Persistent volume
-- Responsive mobile layout
-- Toast notifications and polished empty/loading states
-- YouTube IFrame playback remains the playback mechanism
+A futuristic YouTube music player with account-based cloud library and multi-device sync.
 
-## Run
-1. Keep your existing `.env` file in the project root, or copy `.env.example` to `.env`.
-2. Put your YouTube Data API key in:
-   `YOUTUBE_API_KEY=YOUR_KEY_HERE`
-3. Run:
-   `npm install`
-4. Start:
-   `npm start`
-5. Open:
-   `http://localhost:3000`
+## 3.0 features
 
-Do not commit your real `.env` or API key to GitHub.
+1. Cloud sync — favorites, playlists, queue, recent plays, search history and settings sync per account.
+2. Advanced player — shuffle, repeat, queue, Media Session support, lyrics, sleep timer and transition/crossfade setting.
+3. Mobile-first responsive UI and PWA installation.
+4. Smart home / mood mixes based on listening activity.
+5. Dynamic personalization and theme support.
+6. Playlist management and cloud persistence.
+7. Search suggestions, history and voice search.
+8. Account profiles with bio and public-profile switch.
+9. Public playlist publishing/browsing.
+10. Listening statistics and top-artist activity.
+11. Device list for the current account.
+12. Notifications/toasts and account actions.
+13. Offline app-shell caching through the service worker. YouTube audio itself is not downloaded.
+14. Email/password authentication plus optional Google OAuth.
+15. Multi-device account sessions using the same server/database.
 
-## Notes
-Lyrics are intentionally a UI entry point only in this build; automatic lyrics require a separate licensed/authorized lyrics provider.
-The visualizer is a playback animation and does not attempt to capture audio from the cross-origin YouTube iframe.
+## Setup
 
+```bash
+npm install
+```
 
-## Playback updates
-- Autoplay continues to the next track automatically when a song ends.
-- Queue playback continues to the next queued song before returning to the current collection.
-- Media Session API support provides play/pause, previous/next and seek controls on supported mobile browsers and lock screens.
-- The page does not intentionally pause playback when it becomes hidden/minimized.
+Copy `.env.example` to `.env`, then set `YOUTUBE_API_KEY`.
 
-### Important mobile background-playback limitation
-VOID currently uses the YouTube IFrame Player API as its audio source. Whether audio continues after a mobile browser is minimized or the screen is locked is controlled by the browser/YouTube and cannot be guaranteed by JavaScript. True reliable background audio requires using an audio source that the browser allows to continue in the background (for example, an `<audio>` stream served by the application) rather than a YouTube iframe.
+```bash
+npm start
+```
 
+For Google sign-in, create a Google OAuth Web Application and set the three `GOOGLE_*` variables. The redirect URI must exactly match the one configured with Google.
 
-## Account-synced library
-Favorites, playlists, queue, recently played, search history, and playback settings are now stored on the server per authenticated account. Logging into the same VOID account on another device loads the same library. The first device with an existing local library automatically migrates it to the account.
+### Deployment
+
+Deploy the **same server/database** for all devices. Do not run separate local servers if you want the cloud library to be shared between phone and PC.
+
+### Important
+
+VOID uses YouTube's embedded player for playback. The PWA offline cache stores the application shell; it does not download or redistribute YouTube audio.
