@@ -1,10 +1,184 @@
 const express = require("express");
+const mongoose = require("mongoose");
 const path = require("path");
 const dotenv = require("dotenv");
 const fs = require("fs");
 const crypto = require("crypto");
 
 dotenv.config();
+// ===================== YOUTUBE SEARCH CACHE =====================
+// Search results are cached in MongoDB so repeated searches can be served
+// without calling YouTube Search again. Set MONGO_URI in .env.
+const SEARCH_CACHE_TTL_MS = Number(process.env.YOUTUBE_SEARCH_CACHE_TTL_MS || 6 * 60 * 60 * 1000);
+let mongoReady = false;
+let mongoConnectPromise = null;
+
+const youtubeSearchCacheSchema = new mongoose.Schema({
+    queryKey: { type: String, unique: true, index: true },
+    query: { type: String, required: true },
+    results: { type: Array, default: [] },
+    createdAt: { type: Date, default: Date.now, index: true },
+    updatedAt: { type: Date, default: Date.now }
+}, { collection: "youtubeSearchCache" });
+
+const YouTubeSearchCache = mongoose.models.YouTubeSearchCache ||
+    mongoose.model("YouTubeSearchCache", youtubeSearchCacheSchema);
+
+function normalizeSearchQuery(value = "") {
+    return String(value)
+        .toLowerCase()
+        .normalize("NFKC")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+async function connectMongoForCache() {
+    if (mongoReady && mongoose.connection.readyState === 1) return true;
+    if (!process.env.MONGO_URI) return false;
+    if (!mongoConnectPromise) {
+        mongoConnectPromise = mongoose.connect(process.env.MONGO_URI, {
+            dbName: process.env.MONGO_DB_NAME || undefined,
+            serverSelectionTimeoutMS: 5000
+        }).then(() => {
+            mongoReady = true;
+            console.log("YouTube search cache: MongoDB connected");
+            return true;
+        }).catch((error) => {
+            console.warn("YouTube search cache: MongoDB unavailable:", error.message);
+            mongoConnectPromise = null;
+            return false;
+        });
+    }
+    return mongoConnectPromise;
+}
+
+async function getCachedYouTubeSearch(query) {
+    if (!(await connectMongoForCache())) return null;
+    try {
+        const key = normalizeSearchQuery(query);
+        const cached = await YouTubeSearchCache.findOne({ queryKey: key }).lean();
+        if (!cached) return null;
+        const age = Date.now() - new Date(cached.updatedAt || cached.createdAt).getTime();
+        if (age > SEARCH_CACHE_TTL_MS) return null;
+        return Array.isArray(cached.results) ? cached.results : [];
+    } catch (error) {
+        console.warn("YouTube search cache read failed:", error.message);
+        return null;
+    }
+}
+
+async function saveCachedYouTubeSearch(query, results) {
+    if (!(await connectMongoForCache())) return;
+    try {
+        const key = normalizeSearchQuery(query);
+        await YouTubeSearchCache.findOneAndUpdate(
+            { queryKey: key },
+            {
+                $set: {
+                    queryKey: key,
+                    query: String(query).trim(),
+                    results: Array.isArray(results) ? results : [],
+                    updatedAt: new Date()
+                },
+                $setOnInsert: { createdAt: new Date() }
+            },
+            { upsert: true, new: true }
+        );
+    } catch (error) {
+        console.warn("YouTube search cache write failed:", error.message);
+    }
+}
+
+// Prevent two simultaneous users searching the same uncached query from
+// both consuming a YouTube Search quota call.
+const inFlightYouTubeSearches = new Map();
+
+async function youtubeSearchWithCache(query, apiKey, options = {}) {
+    const cleanQuery = String(query || "").trim();
+    if (!cleanQuery) throw new Error("Search query is required");
+
+    const cacheKey = normalizeSearchQuery(cleanQuery);
+    const cached = await getCachedYouTubeSearch(cleanQuery);
+    if (cached !== null) {
+        return { results: cached, cached: true };
+    }
+
+    if (inFlightYouTubeSearches.has(cacheKey)) {
+        return inFlightYouTubeSearches.get(cacheKey);
+    }
+
+    const work = (async () => {
+        // Re-check after another request may have populated the cache.
+        const secondCheck = await getCachedYouTubeSearch(cleanQuery);
+        if (secondCheck !== null) {
+            return { results: secondCheck, cached: true };
+        }
+
+        if (!apiKey) throw new Error("YouTube API key is missing");
+
+        const url = new URL("https://www.googleapis.com/youtube/v3/search");
+        url.searchParams.set("part", "snippet");
+        url.searchParams.set("type", "video");
+        url.searchParams.set("videoCategoryId", "10");
+        url.searchParams.set("maxResults", String(options.maxResults || 25));
+        url.searchParams.set("q", cleanQuery);
+        if (options.regionCode) url.searchParams.set("regionCode", options.regionCode);
+        if (options.relevanceLanguage) url.searchParams.set("relevanceLanguage", options.relevanceLanguage);
+        url.searchParams.set("key", apiKey);
+
+        const response = await fetch(url);
+        const data = await response.json();
+        if (!response.ok) {
+            const err = new Error(data?.error?.message || "YouTube API error");
+            err.status = response.status;
+            throw err;
+        }
+
+        const candidates = (data.items || []).filter(item => item.id?.videoId);
+        let embeddableIds = new Set(candidates.map(item => item.id.videoId));
+
+        if (candidates.length) {
+            const statusUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+            statusUrl.searchParams.set("part", "status");
+            statusUrl.searchParams.set("id", candidates.map(x => x.id.videoId).join(","));
+            statusUrl.searchParams.set("key", apiKey);
+            const statusResponse = await fetch(statusUrl);
+            const statusData = await statusResponse.json();
+            if (statusResponse.ok) {
+                embeddableIds = new Set(
+                    (statusData.items || [])
+                        .filter(item => item.status?.embeddable === true)
+                        .map(item => item.id)
+                );
+            }
+        }
+
+        const results = candidates
+            .filter(item => embeddableIds.has(item.id.videoId))
+            .map(item => ({
+                id: item.id.videoId,
+                title: item.snippet?.title || "Unknown title",
+                channel: item.snippet?.channelTitle || "YouTube",
+                thumbnail:
+                    item.snippet?.thumbnails?.high?.url ||
+                    item.snippet?.thumbnails?.medium?.url ||
+                    item.snippet?.thumbnails?.default?.url ||
+                    `https://i.ytimg.com/vi/${item.id.videoId}/hqdefault.jpg`,
+                publishedAt: item.snippet?.publishedAt || ""
+            }));
+
+        await saveCachedYouTubeSearch(cleanQuery, results);
+        return { results, cached: false };
+    })();
+
+    inFlightYouTubeSearches.set(cacheKey, work);
+    try {
+        return await work;
+    } finally {
+        inFlightYouTubeSearches.delete(cacheKey);
+    }
+}
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -223,40 +397,19 @@ app.get("/api/discover", requireAuth, async (req,res)=>{
         const library=ensureUserLibrary(u);
         const profile=buildDiscoverProfile(library);
         const apiKey=process.env.YOUTUBE_API_KEY;
-        if(!apiKey) return res.status(500).json({error:"YouTube API key is missing"});
-        const url=new URL("https://www.googleapis.com/youtube/v3/search");
-        url.searchParams.set("part","snippet");
-        url.searchParams.set("type","video");
-        url.searchParams.set("videoCategoryId","10");
-        url.searchParams.set("maxResults","24");
-        url.searchParams.set("q",profile.query);
-        url.searchParams.set("regionCode","IN");
-        url.searchParams.set("relevanceLanguage","hi");
-        url.searchParams.set("key",apiKey);
-        const response=await fetch(url);
-        const data=await response.json();
-        if(!response.ok) return res.status(response.status).json({error:data?.error?.message||"YouTube API error"});
-        const candidates=(data.items||[]).filter(item=>item.id?.videoId);
-        let embeddableIds=new Set(candidates.map(item=>item.id.videoId));
-        if(candidates.length){
-            const statusUrl=new URL("https://www.googleapis.com/youtube/v3/videos");
-            statusUrl.searchParams.set("part","status");
-            statusUrl.searchParams.set("id",candidates.map(x=>x.id.videoId).join(","));
-            statusUrl.searchParams.set("key",apiKey);
-            const sr=await fetch(statusUrl); const sd=await sr.json();
-            if(sr.ok) embeddableIds=new Set((sd.items||[]).filter(x=>x.status?.embeddable===true).map(x=>x.id));
-        }
-        const results=candidates.filter(x=>embeddableIds.has(x.id.videoId)).map(item=>({
-            id:item.id.videoId,
-            title:item.snippet?.title||"Unknown title",
-            channel:item.snippet?.channelTitle||"YouTube",
-            thumbnail:item.snippet?.thumbnails?.high?.url||item.snippet?.thumbnails?.medium?.url||item.snippet?.thumbnails?.default?.url||`https://i.ytimg.com/vi/${item.id.videoId}/hqdefault.jpg`,
-            publishedAt:item.snippet?.publishedAt||""
-        }));
-        res.json({results,query:profile.query,reason:profile.reason,interests:profile.interests});
+        const cachedSearch = await youtubeSearchWithCache(profile.query, apiKey, {
+            maxResults: 24, regionCode: "IN", relevanceLanguage: "hi"
+        });
+        res.json({
+            results: cachedSearch.results,
+            query: profile.query,
+            reason: profile.reason,
+            interests: profile.interests,
+            cached: cachedSearch.cached
+        });
     } catch(error){
         console.error("Discover error:",error);
-        res.status(500).json({error:"Server error while building your discover feed"});
+        res.status(error.status || 500).json({error:error.message||"Server error while building your discover feed"});
     }
 });
 
@@ -275,20 +428,21 @@ app.get("/api/radio", requireAuth, async (req,res)=>{
         const stationQuery=stationMap[station]||`Indian Hindi Bollywood ${station}`;
         const learned=(profile.interests||[]).join(" ");
         const query=`Indian Hindi Bollywood ${learned} ${stationQuery}`.replace(/\s+/g," ").trim();
-        const apiKey=process.env.YOUTUBE_API_KEY; if(!apiKey)return res.status(500).json({error:"YouTube API key is missing"});
-        const url=new URL("https://www.googleapis.com/youtube/v3/search");
-        for(const [k,v] of Object.entries({part:"snippet",type:"video",videoCategoryId:"10",maxResults:"24",q:query,regionCode:"IN",relevanceLanguage:"hi",key:apiKey})) url.searchParams.set(k,v);
-        const response=await fetch(url); const data=await response.json();
-        if(!response.ok)return res.status(response.status).json({error:data?.error?.message||"YouTube API error"});
-        const candidates=(data.items||[]).filter(x=>x.id?.videoId);
-        let embeddableIds=new Set(candidates.map(x=>x.id.videoId));
-        if(candidates.length){
-          const su=new URL("https://www.googleapis.com/youtube/v3/videos"); su.searchParams.set("part","status"); su.searchParams.set("id",candidates.map(x=>x.id.videoId).join(",")); su.searchParams.set("key",apiKey);
-          const sr=await fetch(su); const sd=await sr.json(); if(sr.ok) embeddableIds=new Set((sd.items||[]).filter(x=>x.status?.embeddable===true).map(x=>x.id));
-        }
-        const results=candidates.filter(x=>embeddableIds.has(x.id.videoId)).map(item=>({id:item.id.videoId,title:item.snippet?.title||"Unknown title",channel:item.snippet?.channelTitle||"YouTube",thumbnail:item.snippet?.thumbnails?.high?.url||item.snippet?.thumbnails?.medium?.url||`https://i.ytimg.com/vi/${item.id.videoId}/hqdefault.jpg`,publishedAt:item.snippet?.publishedAt||""}));
-        res.json({results,query,reason:profile.reason,interests:profile.interests});
-    } catch(e){ console.error("Radio error",e); res.status(500).json({error:"Could not build your Indian radio station"}); }
+        const apiKey=process.env.YOUTUBE_API_KEY;
+        const cachedSearch = await youtubeSearchWithCache(query, apiKey, {
+            maxResults: 24, regionCode: "IN", relevanceLanguage: "hi"
+        });
+        res.json({
+            results: cachedSearch.results,
+            query,
+            reason: profile.reason,
+            interests: profile.interests,
+            cached: cachedSearch.cached
+        });
+    } catch(e){
+        console.error("Radio error",e);
+        res.status(e.status || 500).json({error:e.message||"Could not build your Indian radio station"});
+    }
 });
 
 app.get("/api/lyrics", requireAuth, async (req,res)=>{ try { const artist=String(req.query.artist||""); const title=String(req.query.title||""); if(!title)return res.status(400).json({error:"Song title required"}); const url=new URL("https://lrclib.net/api/get"); url.searchParams.set("artist_name",artist); url.searchParams.set("track_name",title); const r=await fetch(url); if(!r.ok)return res.status(404).json({error:"Lyrics not found"}); const d=await r.json(); res.json({lyrics:d.plainLyrics||d.syncedLyrics||"Lyrics unavailable",syncedLyrics:d.syncedLyrics||""}); } catch(e){ res.status(502).json({error:"Lyrics service unavailable"}); } });
@@ -320,100 +474,25 @@ app.get("/api/auth/google/callback", async (req,res)=>{
 app.get("/api/search", requireAuth, async (req, res) => {
     try {
         const query = String(req.query.q || "").trim();
-
-        if (!query) {
-            return res.status(400).json({
-                error: "Search query is required"
-            });
-        }
+        if (!query) return res.status(400).json({ error: "Search query is required" });
 
         const apiKey = process.env.YOUTUBE_API_KEY;
+        const cachedSearch = await youtubeSearchWithCache(query, apiKey, { maxResults: 25 });
 
-        if (!apiKey) {
-            return res.status(500).json({
-                error: "YouTube API key is missing"
-            });
-        }
-
-        const url = new URL(
-            "https://www.googleapis.com/youtube/v3/search"
-        );
-
-        url.searchParams.set("part", "snippet");
-        url.searchParams.set("type", "video");
-        url.searchParams.set("videoCategoryId", "10");
-        url.searchParams.set("maxResults", "25");
-        url.searchParams.set("q", query);
-        url.searchParams.set("key", apiKey);
-
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (!response.ok) {
-            console.error("YouTube API error:", data);
-
-            return res.status(response.status).json({
-                error:
-                    data?.error?.message ||
-                    "YouTube API error"
-            });
-        }
-
-        const candidates = (data.items || [])
-            .filter(item => item.id?.videoId);
-
-        // Search results can contain videos that YouTube does not allow to be
-        // embedded. Those videos produce IFrame API errors 101/150 and can
-        // make a playlist appear to stop. Ask the Videos API for embed status
-        // and remove them before sending results to the player.
-        let embeddableIds = new Set();
-        if (candidates.length) {
-            const ids = candidates.map(item => item.id.videoId).join(",");
-            const statusUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
-            statusUrl.searchParams.set("part", "status");
-            statusUrl.searchParams.set("id", ids);
-            statusUrl.searchParams.set("key", apiKey);
-
-            const statusResponse = await fetch(statusUrl);
-            const statusData = await statusResponse.json();
-            if (statusResponse.ok) {
-                embeddableIds = new Set(
-                    (statusData.items || [])
-                        .filter(item => item.status?.embeddable === true)
-                        .map(item => item.id)
-                );
-            } else {
-                console.error("YouTube video-status API error:", statusData);
-                // If status lookup fails, keep the search results rather than
-                // breaking search completely. The client still handles 101/150.
-                embeddableIds = new Set(candidates.map(item => item.id.videoId));
-            }
-        }
-
-        const results = candidates
-            .filter(item => embeddableIds.has(item.id.videoId))
-            .map(item => ({
-                id: item.id.videoId,
-                title: item.snippet?.title || "Unknown title",
-                channel: item.snippet?.channelTitle || "YouTube",
-                thumbnail:
-                    item.snippet?.thumbnails?.high?.url ||
-                    item.snippet?.thumbnails?.medium?.url ||
-                    item.snippet?.thumbnails?.default?.url ||
-                    `https://i.ytimg.com/vi/${item.id.videoId}/hqdefault.jpg`,
-                publishedAt: item.snippet?.publishedAt || ""
-            }));
-
-        res.json({ results });
-
+        res.json({
+            results: cachedSearch.results,
+            cached: cachedSearch.cached,
+            query: normalizeSearchQuery(query)
+        });
     } catch (error) {
         console.error("Search error:", error);
-
-        res.status(500).json({
-            error: "Server error while searching YouTube"
+        res.status(error.status || 500).json({
+            error: error.message || "Server error while searching YouTube"
         });
     }
 });
+
+// ===================== END YOUTUBE SEARCH CACHE =====================
 
 // Serve the player only after authentication.
 app.use(requireAuth, express.static(publicDir));

@@ -31,3 +31,37 @@ Both devices must use the same deployed VOID server and the same account. The ac
 
 ### Offline note
 The PWA caches the application shell for offline startup. It does not download or cache YouTube audio.
+
+## YouTube Search Cache
+
+This build adds a shared MongoDB cache for YouTube Search results.
+
+Flow:
+1. User A searches a query.
+2. If the normalized query is not cached, VOID makes one YouTube Search request.
+3. The returned video IDs/results are stored in the `youtubeSearchCache` collection.
+4. User B searching the same normalized query gets the cached results without another YouTube Search request.
+5. Simultaneous identical searches are also coalesced so they do not create duplicate upstream requests.
+6. Discover and Radio use the same cache helper.
+
+### Environment variables
+
+Copy `.env.example` to `.env` and set:
+
+```env
+YOUTUBE_API_KEY=...
+MONGO_URI=...
+MONGO_DB_NAME=VOID
+YOUTUBE_SEARCH_CACHE_TTL_MS=21600000
+```
+
+`MONGO_DB_NAME` is optional if the database is already specified in `MONGO_URI`.
+
+### Install
+
+```bash
+npm install
+npm start
+```
+
+The cache is shared across all users of this server because it lives in MongoDB. If `MONGO_URI` is not configured or MongoDB is temporarily unavailable, VOID falls back to the normal YouTube API path rather than crashing.
