@@ -61,5 +61,3 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
-const googleButton=document.getElementById("googleButton");
-if(googleButton){ googleButton.addEventListener("click",async()=>{ try{const r=await fetch("/api/auth/providers");const d=await r.json();if(!d.google){document.getElementById("authError").textContent="Google sign-in needs GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET on the server.";return;}location.href="/api/auth/google";}catch{document.getElementById("authError").textContent="Unable to start Google sign-in.";} }); }

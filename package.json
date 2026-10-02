@@ -1,7 +1,7 @@
 {
   "name": "void-yt-music",
-  "version": "3.0.0",
-  "description": "VOID Music Player 3.0 \u2014 cloud synced multi-device YouTube music player",
+  "version": "4.1.0",
+  "description": "VOID Music Player \u2014 MongoDB-backed multi-user YouTube music player",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

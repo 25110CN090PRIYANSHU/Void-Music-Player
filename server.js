@@ -34,9 +34,10 @@ function normalizeSearchQuery(value = "") {
 
 async function connectMongoForCache() {
     if (mongoReady && mongoose.connection.readyState === 1) return true;
-    if (!process.env.MONGO_URI) return false;
+    const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI;
+    if (!mongoUri) return false;
     if (!mongoConnectPromise) {
-        mongoConnectPromise = mongoose.connect(process.env.MONGO_URI, {
+        mongoConnectPromise = mongoose.connect(mongoUri, {
             dbName: process.env.MONGO_DB_NAME || undefined,
             serverSelectionTimeoutMS: 5000
         }).then(() => {
@@ -189,46 +190,181 @@ const sessions = new Map();
 
 app.use(express.json({ limit: "1mb" }));
 
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-if (!fs.existsSync(usersFile)) fs.writeFileSync(usersFile, "[]");
 
-function readUsers() {
-    try {
-        const users = JSON.parse(fs.readFileSync(usersFile, "utf8"));
-        return Array.isArray(users) ? users : [];
-    } catch {
-        return [];
+// ===================== MONGODB PERSISTENCE =====================
+// MongoDB is the source of truth for accounts and all user-specific music data.
+// The old JSON files are read ONLY once during migration and are never used at
+// runtime after that migration completes.
+
+const defaultSettings = {
+    theme: "dark",
+    autoplayQueue: true,
+    rememberVolume: true,
+    volume: 80,
+    crossfade: 0,
+    sleepTimer: 0
+};
+
+const UserSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true, index: true },
+    name: { type: String, required: true, trim: true, maxlength: 50 },
+    email: { type: String, required: true, unique: true, lowercase: true, index: true },
+    salt: { type: String, required: true },
+    hash: { type: String, required: true },
+    googleId: { type: String, index: true, sparse: true },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
+    devices: { type: Array, default: [] }
+}, { collection: "users" });
+
+const UserLibrarySchema = new mongoose.Schema({
+    userId: { type: String, required: true, unique: true, index: true },
+    favorites: { type: Array, default: [] },
+    queue: { type: Array, default: [] },
+    recent: { type: Array, default: [] },
+    playlists: { type: mongoose.Schema.Types.Mixed, default: {} },
+    searchHistory: { type: Array, default: [] },
+    settings: { type: mongoose.Schema.Types.Mixed, default: () => ({ ...defaultSettings }) },
+    profile: {
+        bio: { type: String, default: "" },
+        avatar: { type: String, default: "" },
+        publicProfile: { type: Boolean, default: false }
+    },
+    lastPlayed: { type: mongoose.Schema.Types.Mixed, default: null },
+    updatedAt: { type: Date, default: Date.now }
+}, { collection: "userLibraries", minimize: false });
+
+const PublicPlaylistSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true, index: true },
+    name: { type: String, required: true, maxlength: 80 },
+    owner: { type: Object, required: true },
+    songs: { type: Array, default: [] },
+    updatedAt: { type: Date, default: Date.now }
+}, { collection: "publicPlaylists" });
+
+const User = mongoose.models.VoidUser || mongoose.model("VoidUser", UserSchema);
+const UserLibrary = mongoose.models.VoidUserLibrary || mongoose.model("VoidUserLibrary", UserLibrarySchema);
+const PublicPlaylist = mongoose.models.VoidPublicPlaylist || mongoose.model("VoidPublicPlaylist", PublicPlaylistSchema);
+
+function defaultLibrary() {
+    return {
+        favorites: [],
+        queue: [],
+        recent: [],
+        playlists: {},
+        searchHistory: [],
+        settings: { ...defaultSettings },
+        profile: { bio: "", avatar: "", publicProfile: false },
+        lastPlayed: null
+    };
+}
+
+function normalizeLibrary(value = {}) {
+    const base = defaultLibrary();
+    return {
+        favorites: Array.isArray(value.favorites) ? value.favorites : base.favorites,
+        queue: Array.isArray(value.queue) ? value.queue : base.queue,
+        recent: Array.isArray(value.recent) ? value.recent : base.recent,
+        playlists: value.playlists && typeof value.playlists === "object" && !Array.isArray(value.playlists) ? value.playlists : base.playlists,
+        searchHistory: Array.isArray(value.searchHistory) ? value.searchHistory : base.searchHistory,
+        settings: { ...base.settings, ...(value.settings || {}) },
+        profile: { ...base.profile, ...(value.profile || {}) },
+        lastPlayed: value.lastPlayed ?? null
+    };
+}
+
+async function getUserById(id) {
+    return User.findOne({ id }).lean();
+}
+
+async function getUserLibrary(userId, create = true) {
+    let doc = await UserLibrary.findOne({ userId });
+    if (!doc && create) {
+        doc = await UserLibrary.create({ userId, ...defaultLibrary() });
     }
+    return doc;
 }
 
-function writeUsers(users) {
-    const temporaryFile = `${usersFile}.tmp`;
-    fs.writeFileSync(temporaryFile, JSON.stringify(users, null, 2), "utf8");
-    fs.renameSync(temporaryFile, usersFile);
+function publicUser(user) {
+    return user ? { id: user.id, name: user.name || user.email?.split("@")[0], email: user.email } : null;
 }
 
-function normalizeEmail(value) {
-    return String(value || "").normalize("NFKC").trim().toLowerCase();
-}
+async function migrateLegacyJsonToMongo() {
+    const oldUsersFile = path.join(dataDir, "users.json");
+    const oldPublicFile = path.join(dataDir, "public-playlists.json");
 
-function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
-    const hash = crypto.scryptSync(password, salt, 64).toString("hex");
-    return { salt, hash };
-}
+    if (fs.existsSync(oldUsersFile)) {
+        try {
+            const legacyUsers = JSON.parse(fs.readFileSync(oldUsersFile, "utf8"));
+            if (Array.isArray(legacyUsers)) {
+                for (const old of legacyUsers) {
+                    if (!old?.email || !old?.id) continue;
 
-function passwordsMatch(password, user) {
-    try {
-        // Accept both the current fields and the older field names so accounts
-        // created by an earlier build continue to work after an update.
-        const salt = user?.salt || user?.passwordSalt;
-        const storedHash = user?.hash || user?.passwordHash;
-        if (!salt || !storedHash) return false;
-        const hash = crypto.scryptSync(password, salt, 64).toString("hex");
-        const expected = Buffer.from(storedHash, "hex");
-        const actual = Buffer.from(hash, "hex");
-        return expected.length === actual.length && crypto.timingSafeEqual(actual, expected);
-    } catch {
-        return false;
+                    let user = await User.findOne({
+                        $or: [{ id: old.id }, { email: normalizeEmail(old.email) }]
+                    });
+
+                    if (!user) {
+                        user = await User.create({
+                            id: old.id,
+                            name: String(old.name || old.email.split("@")[0]).slice(0, 50),
+                            email: normalizeEmail(old.email),
+                            salt: old.salt || old.passwordSalt || crypto.randomBytes(16).toString("hex"),
+                            hash: old.hash || old.passwordHash || crypto.randomBytes(64).toString("hex"),
+                            googleId: old.googleId,
+                            createdAt: old.createdAt ? new Date(old.createdAt) : new Date(),
+                            devices: Array.isArray(old.devices) ? old.devices : []
+                        });
+                    }
+
+                    const legacyLibrary = old.library || {};
+                    const existingLibrary = await UserLibrary.findOne({ userId: user.id });
+                    if (!existingLibrary) {
+                        await UserLibrary.create({
+                            userId: user.id,
+                            ...normalizeLibrary(legacyLibrary)
+                        });
+                    } else if (Object.keys(legacyLibrary).length) {
+                        await UserLibrary.updateOne(
+                            { userId: user.id },
+                            { $set: normalizeLibrary(legacyLibrary) }
+                        );
+                    }
+                }
+                console.log(`MongoDB: migrated ${legacyUsers.length} legacy user record(s)`);
+                try { fs.unlinkSync(oldUsersFile); } catch {}
+            }
+        } catch (error) {
+            console.warn("MongoDB legacy users migration skipped:", error.message);
+        }
+    }
+
+    if (fs.existsSync(oldPublicFile)) {
+        try {
+            const legacyLists = JSON.parse(fs.readFileSync(oldPublicFile, "utf8"));
+            if (Array.isArray(legacyLists)) {
+                for (const item of legacyLists) {
+                    if (!item?.id) continue;
+                    await PublicPlaylist.updateOne(
+                        { id: item.id },
+                        {
+                            $setOnInsert: {
+                                id: item.id,
+                                name: String(item.name || "VOID Playlist").slice(0, 80),
+                                owner: item.owner || {},
+                                songs: Array.isArray(item.songs) ? item.songs.slice(0, 500) : [],
+                                updatedAt: item.updatedAt ? new Date(item.updatedAt) : new Date()
+                            }
+                        },
+                        { upsert: true }
+                    );
+                }
+                console.log(`MongoDB: migrated ${legacyLists.length} public playlist record(s)`);
+                try { fs.unlinkSync(oldPublicFile); } catch {}
+            }
+        } catch (error) {
+            console.warn("MongoDB legacy public playlists migration skipped:", error.message);
+        }
     }
 }
 
@@ -269,47 +405,58 @@ app.get("/login.html", (req, res) => res.sendFile(path.join(publicDir, "login.ht
 app.get("/auth.css", (req, res) => res.sendFile(path.join(publicDir, "auth.css")));
 app.get("/auth.js", (req, res) => res.sendFile(path.join(publicDir, "auth.js")));
 
-app.post("/api/auth/register", (req, res) => {
-    const email = normalizeEmail(req.body.email);
-    const name = String(req.body.name || "").trim();
-    const password = String(req.body.password || "");
-    if (name.length < 2 || name.length > 50)
-        return res.status(400).json({ error: "Enter your name (2–50 characters)." });
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-        return res.status(400).json({ error: "Enter a valid email address." });
-    if (password.length < 6)
-        return res.status(400).json({ error: "Password must be at least 6 characters." });
-    const users = readUsers();
-    if (users.some((user) => user.email === email))
-        return res.status(409).json({ error: "An account with that email already exists." });
-    const credentials = hashPassword(password);
-    const user = { id: crypto.randomUUID(), name, email, ...credentials, createdAt: new Date().toISOString() };
-    users.push(user);
-    writeUsers(users);
-    const token = createSession(user);
-    setSessionCookie(res, token);
-    res.json({ user: { id: user.id, name: user.name, email: user.email } });
+app.post("/api/auth/register", async (req, res) => {
+    try {
+        const email = normalizeEmail(req.body.email);
+        const name = String(req.body.name || "").trim();
+        const password = String(req.body.password || "");
+        if (name.length < 2 || name.length > 50)
+            return res.status(400).json({ error: "Enter your name (2–50 characters)." });
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+            return res.status(400).json({ error: "Enter a valid email address." });
+        if (password.length < 6)
+            return res.status(400).json({ error: "Password must be at least 6 characters." });
+        if (await User.exists({ email }))
+            return res.status(409).json({ error: "An account with that email already exists." });
+
+        const credentials = hashPassword(password);
+        const user = await User.create({
+            id: crypto.randomUUID(), name, email, ...credentials, createdAt: new Date()
+        });
+        await getUserLibrary(user.id, true);
+
+        const token = createSession(user);
+        setSessionCookie(res, token);
+        res.json({ user: publicUser(user) });
+    } catch (error) {
+        console.error("Register error:", error);
+        res.status(500).json({ error: "Could not create your account." });
+    }
 });
 
-app.post("/api/auth/login", (req, res) => {
-    const email = normalizeEmail(req.body.email);
-    const password = String(req.body.password || "");
-    const users = readUsers();
-    const user = users.find((candidate) => normalizeEmail(candidate.email) === email);
-    if (!user || !passwordsMatch(password, user))
-        return res.status(401).json({ error: "Email or password is incorrect." });
-    // Upgrade an account created by a legacy build to the current hash fields.
-    if (!user.salt || !user.hash) {
-        const credentials = hashPassword(password);
-        user.salt = credentials.salt;
-        user.hash = credentials.hash;
-        delete user.passwordSalt;
-        delete user.passwordHash;
-        writeUsers(users);
+app.post("/api/auth/login", async (req, res) => {
+    try {
+        const email = normalizeEmail(req.body.email);
+        const password = String(req.body.password || "");
+        const user = await User.findOne({ email });
+        if (!user || !passwordsMatch(password, user))
+            return res.status(401).json({ error: "Email or password is incorrect." });
+
+        if (!user.salt || !user.hash) {
+            const credentials = hashPassword(password);
+            user.salt = credentials.salt;
+            user.hash = credentials.hash;
+            user.updatedAt = new Date();
+            await user.save();
+        }
+
+        const token = createSession(user);
+        setSessionCookie(res, token);
+        res.json({ user: publicUser(user) });
+    } catch (error) {
+        console.error("Login error:", error);
+        res.status(500).json({ error: "Could not log in right now." });
     }
-    const token = createSession(user);
-    setSessionCookie(res, token);
-    res.json({ user: { id: user.id, name: user.name || user.email.split("@")[0], email: user.email } });
 });
 
 app.post("/api/auth/logout", (req, res) => {
@@ -319,11 +466,12 @@ app.post("/api/auth/logout", (req, res) => {
     res.json({ ok: true });
 });
 
-app.get("/api/auth/me", (req, res) => {
+app.get("/api/auth/me", async (req, res) => {
     const session = sessionFromRequest(req);
     if (!session) return res.status(401).json({ error: "Not logged in." });
-    const user = readUsers().find((candidate) => candidate.id === session.id);
-    res.json({ user: { id: session.id, name: user?.name || session.email.split("@")[0], email: session.email } });
+    const user = await getUserById(session.id);
+    if (!user) return res.status(401).json({ error: "Account not found." });
+    res.json({ user: publicUser(user) });
 });
 
 // Explicit homepage route
@@ -335,30 +483,164 @@ app.get("/", (req, res) => {
 // Health check
 app.get("/api/health", (req, res) => {
     res.json({
-        ok: true,
+        ok: mongoReady && mongoose.connection.readyState === 1,
+        mongo: mongoReady && mongoose.connection.readyState === 1,
         service: "VOID Music Player"
     });
 });
 
 
 
-// ===================== VOID CLOUD / V3 API =====================
-const publicPlaylistsFile = path.join(dataDir, "public-playlists.json");
-if (!fs.existsSync(publicPlaylistsFile)) fs.writeFileSync(publicPlaylistsFile, "[]");
-function readPublicPlaylists(){ try { const x=JSON.parse(fs.readFileSync(publicPlaylistsFile,"utf8")); return Array.isArray(x)?x:[]; } catch { return []; } }
-function writePublicPlaylists(x){ const t=publicPlaylistsFile+".tmp"; fs.writeFileSync(t,JSON.stringify(x,null,2)); fs.renameSync(t,publicPlaylistsFile); }
-function defaultLibrary(){ return {favorites:[],queue:[],recent:[],playlists:{},searchHistory:[],settings:{theme:"dark",autoplayQueue:true,rememberVolume:true,crossfade:0,sleepTimer:0},profile:{bio:"",avatar:"",publicProfile:false},lastPlayed:null}; }
-function ensureUserLibrary(user){ user.library = Object.assign(defaultLibrary(), user.library || {}); user.library.favorites = Array.isArray(user.library.favorites)?user.library.favorites:[]; user.library.queue=Array.isArray(user.library.queue)?user.library.queue:[]; user.library.recent=Array.isArray(user.library.recent)?user.library.recent:[]; user.library.searchHistory=Array.isArray(user.library.searchHistory)?user.library.searchHistory:[]; user.library.playlists=user.library.playlists && typeof user.library.playlists==='object'?user.library.playlists:{}; user.library.settings=Object.assign(defaultLibrary().settings,user.library.settings||{}); user.library.profile=Object.assign(defaultLibrary().profile,user.library.profile||{}); return user.library; }
-function findAuthedUser(req){ const users=readUsers(); const u=users.find(x=>x.id===req.user.id); return {users,u}; }
+// ===================== VOID MONGO LIBRARY API =====================
+// No user library data is stored in localStorage or users.json at runtime.
 
-app.get("/api/library", requireAuth, (req,res)=>{ const {u}=findAuthedUser(req); if(!u) return res.status(404).json({error:"Account not found"}); const library=ensureUserLibrary(u); writeUsers(readUsers().map(x=>x.id===u.id?u:x)); res.json({library}); });
-app.put("/api/library", requireAuth, (req,res)=>{ const {users,u}=findAuthedUser(req); if(!u) return res.status(404).json({error:"Account not found"}); const incoming=req.body?.library||{}; const library=ensureUserLibrary(u); for(const key of ["favorites","queue","recent","playlists","searchHistory","settings","profile","lastPlayed"]){ if(incoming[key]!==undefined) library[key]=incoming[key]; } u.library=library; u.updatedAt=new Date().toISOString(); writeUsers(users); res.json({ok:true,library}); });
-app.patch("/api/profile", requireAuth, (req,res)=>{ const {users,u}=findAuthedUser(req); if(!u)return res.status(404).json({error:"Account not found"}); const l=ensureUserLibrary(u); l.profile=Object.assign(l.profile, {bio:String(req.body?.bio||"").slice(0,240),avatar:String(req.body?.avatar||"").slice(0,500000),publicProfile:Boolean(req.body?.publicProfile)}); writeUsers(users); res.json({profile:l.profile}); });
-app.get("/api/profile/:id", (req,res)=>{ const u=readUsers().find(x=>x.id===req.params.id); if(!u)return res.status(404).json({error:"Profile not found"}); const l=ensureUserLibrary(u); res.json({id:u.id,name:u.name,email:u.email,bio:l.profile.bio,avatar:l.profile.avatar,publicProfile:l.profile.publicProfile,playlists:l.profile.publicProfile?Object.entries(l.playlists).map(([name,songs])=>({name,songs})):[]}); });
-app.get("/api/stats", requireAuth, (req,res)=>{ const {u}=findAuthedUser(req); const l=ensureUserLibrary(u); const recent=l.recent||[]; const counts={}; recent.forEach(x=>{const k=x.channel||"Unknown";counts[k]=(counts[k]||0)+1;}); const topArtists=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([artist,plays])=>({artist,plays})); res.json({totalPlays:recent.length,totalFavorites:(l.favorites||[]).length,totalPlaylists:Object.keys(l.playlists||{}).length,topArtists,history:recent.slice(0,50)}); });
-app.post("/api/devices", requireAuth, (req,res)=>{ const {users,u}=findAuthedUser(req); const device={id:String(req.body?.id||crypto.randomUUID()),name:String(req.body?.name||"VOID Device").slice(0,80),platform:String(req.body?.platform||"Web"),lastSeen:new Date().toISOString()}; u.devices=Array.isArray(u.devices)?u.devices:[]; u.devices=[device,...u.devices.filter(x=>x.id!==device.id)].slice(0,10); writeUsers(users); res.json({devices:u.devices}); });
-app.get("/api/devices", requireAuth, (req,res)=>{ const {u}=findAuthedUser(req); res.json({devices:u?.devices||[]}); });
-app.delete("/api/devices/:id", requireAuth, (req,res)=>{ const {users,u}=findAuthedUser(req); if(!u)return res.status(404).json({error:"Account not found"}); u.devices=(u.devices||[]).filter(x=>x.id!==req.params.id); writeUsers(users); res.json({devices:u.devices}); });
+app.get("/api/library", requireAuth, async (req, res) => {
+    try {
+        const doc = await getUserLibrary(req.user.id, true);
+        const library = normalizeLibrary(doc.toObject ? doc.toObject() : doc);
+        res.json({ library });
+    } catch (error) {
+        console.error("Library read error:", error);
+        res.status(500).json({ error: "Could not load your library." });
+    }
+});
+
+app.put("/api/library", requireAuth, async (req, res) => {
+    try {
+        const incoming = req.body?.library || {};
+        const library = normalizeLibrary(incoming);
+        await UserLibrary.findOneAndUpdate(
+            { userId: req.user.id },
+            { $set: { ...library, updatedAt: new Date() } },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+        res.json({ ok: true, library });
+    } catch (error) {
+        console.error("Library write error:", error);
+        res.status(500).json({ error: "Could not save your library." });
+    }
+});
+
+app.post("/api/library/reset", requireAuth, async (req, res) => {
+    try {
+        const library = defaultLibrary();
+        await UserLibrary.findOneAndUpdate(
+            { userId: req.user.id },
+            { $set: { ...library, updatedAt: new Date() } },
+            { upsert: true }
+        );
+        res.json({ ok: true, library });
+    } catch (error) {
+        console.error("Library reset error:", error);
+        res.status(500).json({ error: "Could not reset your library." });
+    }
+});
+
+app.patch("/api/profile", requireAuth, async (req, res) => {
+    try {
+        const doc = await getUserLibrary(req.user.id, true);
+        const profile = {
+            ...doc.profile?.toObject?.() || doc.profile || {},
+            bio: String(req.body?.bio || "").slice(0, 240),
+            avatar: String(req.body?.avatar || "").slice(0, 500000),
+            publicProfile: Boolean(req.body?.publicProfile)
+        };
+        await UserLibrary.updateOne({ userId: req.user.id }, { $set: { profile, updatedAt: new Date() } });
+        res.json({ profile });
+    } catch (error) {
+        console.error("Profile write error:", error);
+        res.status(500).json({ error: "Could not update your profile." });
+    }
+});
+
+app.get("/api/profile/:id", async (req, res) => {
+    try {
+        const user = await User.findOne({ id: req.params.id }).lean();
+        if (!user) return res.status(404).json({ error: "Profile not found" });
+        const doc = await getUserLibrary(user.id, true);
+        const library = normalizeLibrary(doc.toObject ? doc.toObject() : doc);
+        res.json({
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            bio: library.profile.bio,
+            avatar: library.profile.avatar,
+            publicProfile: library.profile.publicProfile,
+            playlists: library.profile.publicProfile
+                ? Object.entries(library.playlists).map(([name, songs]) => ({ name, songs }))
+                : []
+        });
+    } catch (error) {
+        console.error("Profile read error:", error);
+        res.status(500).json({ error: "Could not load profile." });
+    }
+});
+
+app.get("/api/stats", requireAuth, async (req, res) => {
+    try {
+        const doc = await getUserLibrary(req.user.id, true);
+        const l = normalizeLibrary(doc.toObject ? doc.toObject() : doc);
+        const recent = l.recent || [];
+        const counts = {};
+        recent.forEach(x => {
+            const k = x.channel || "Unknown";
+            counts[k] = (counts[k] || 0) + 1;
+        });
+        const topArtists = Object.entries(counts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([artist, plays]) => ({ artist, plays }));
+        res.json({
+            totalPlays: recent.length,
+            totalFavorites: (l.favorites || []).length,
+            totalPlaylists: Object.keys(l.playlists || {}).length,
+            topArtists,
+            history: recent.slice(0, 50)
+        });
+    } catch (error) {
+        console.error("Stats error:", error);
+        res.status(500).json({ error: "Could not load stats." });
+    }
+});
+
+app.post("/api/devices", requireAuth, async (req, res) => {
+    try {
+        const device = {
+            id: String(req.body?.id || crypto.randomUUID()),
+            name: String(req.body?.name || "VOID Device").slice(0, 80),
+            platform: String(req.body?.platform || "Web"),
+            lastSeen: new Date().toISOString()
+        };
+        const user = await User.findOne({ id: req.user.id });
+        if (!user) return res.status(404).json({ error: "Account not found" });
+        user.devices = [device, ...(Array.isArray(user.devices) ? user.devices : []).filter(x => x.id !== device.id)].slice(0, 10);
+        user.updatedAt = new Date();
+        await user.save();
+        res.json({ devices: user.devices });
+    } catch (error) {
+        console.error("Device write error:", error);
+        res.status(500).json({ error: "Could not save device." });
+    }
+});
+
+app.get("/api/devices", requireAuth, async (req, res) => {
+    const user = await User.findOne({ id: req.user.id }).lean();
+    res.json({ devices: user?.devices || [] });
+});
+
+app.delete("/api/devices/:id", requireAuth, async (req, res) => {
+    try {
+        const user = await User.findOne({ id: req.user.id });
+        if (!user) return res.status(404).json({ error: "Account not found" });
+        user.devices = (user.devices || []).filter(x => x.id !== req.params.id);
+        await user.save();
+        res.json({ devices: user.devices });
+    } catch (error) {
+        console.error("Device delete error:", error);
+        res.status(500).json({ error: "Could not delete device." });
+    }
+});
+
 function buildDiscoverProfile(library) {
     const recent = Array.isArray(library?.recent) ? library.recent : [];
     const favorites = Array.isArray(library?.favorites) ? library.favorites : [];
@@ -386,15 +668,15 @@ function buildDiscoverProfile(library) {
     return {query, reason, interests: learned.map(x=>x.label)};
 }
 
-app.get("/api/recommendations", requireAuth, (req,res)=>{
-    const {u}=findAuthedUser(req); const l=ensureUserLibrary(u); const profile=buildDiscoverProfile(l);
+app.get("/api/recommendations", requireAuth, async (req,res)=>{
+    const doc=await getUserLibrary(req.user.id, true); const l=normalizeLibrary(doc.toObject ? doc.toObject() : doc); const profile=buildDiscoverProfile(l);
     res.json({query:profile.query, reason:profile.reason, interests:profile.interests});
 });
 
 app.get("/api/discover", requireAuth, async (req,res)=>{
     try {
-        const {u}=findAuthedUser(req);
-        const library=ensureUserLibrary(u);
+        const doc=await getUserLibrary(req.user.id, true);
+        const library=normalizeLibrary(doc.toObject ? doc.toObject() : doc);
         const profile=buildDiscoverProfile(library);
         const apiKey=process.env.YOUTUBE_API_KEY;
         const cachedSearch = await youtubeSearchWithCache(profile.query, apiKey, {
@@ -415,7 +697,7 @@ app.get("/api/discover", requireAuth, async (req,res)=>{
 
 app.get("/api/radio", requireAuth, async (req,res)=>{
     try {
-        const {u}=findAuthedUser(req); const library=ensureUserLibrary(u); const profile=buildDiscoverProfile(library);
+        const doc=await getUserLibrary(req.user.id, true); const library=normalizeLibrary(doc.toObject ? doc.toObject() : doc); const profile=buildDiscoverProfile(library);
         const station=String(req.query.station||"chill").slice(0,80);
         const stationMap={
           "late night chill":"late night Hindi Indian Bollywood lofi romantic chill songs",
@@ -446,29 +728,25 @@ app.get("/api/radio", requireAuth, async (req,res)=>{
 });
 
 app.get("/api/lyrics", requireAuth, async (req,res)=>{ try { const artist=String(req.query.artist||""); const title=String(req.query.title||""); if(!title)return res.status(400).json({error:"Song title required"}); const url=new URL("https://lrclib.net/api/get"); url.searchParams.set("artist_name",artist); url.searchParams.set("track_name",title); const r=await fetch(url); if(!r.ok)return res.status(404).json({error:"Lyrics not found"}); const d=await r.json(); res.json({lyrics:d.plainLyrics||d.syncedLyrics||"Lyrics unavailable",syncedLyrics:d.syncedLyrics||""}); } catch(e){ res.status(502).json({error:"Lyrics service unavailable"}); } });
-app.get("/api/public-playlists", (req,res)=>res.json({playlists:readPublicPlaylists().map(x=>({id:x.id,name:x.name,owner:x.owner,updatedAt:x.updatedAt,songs:x.songs}))}));
-app.post("/api/public-playlists", requireAuth, (req,res)=>{ const {u}=findAuthedUser(req); const list=readPublicPlaylists(); const item={id:crypto.randomUUID(),name:String(req.body?.name||"VOID Playlist").slice(0,80),owner:{id:u.id,name:u.name},songs:Array.isArray(req.body?.songs)?req.body.songs.slice(0,500):[],updatedAt:new Date().toISOString()}; list.unshift(item); writePublicPlaylists(list.slice(0,100)); res.json({playlist:item}); });
+app.get("/api/public-playlists", async (req,res)=>{
+    const playlists = await PublicPlaylist.find({}).sort({ updatedAt: -1 }).limit(100).lean();
+    res.json({ playlists: playlists.map(x => ({ id:x.id,name:x.name,owner:x.owner,updatedAt:x.updatedAt,songs:x.songs })) });
+});
+app.post("/api/public-playlists", requireAuth, async (req,res)=>{
+    const user = await User.findOne({ id: req.user.id }).lean();
+    if (!user) return res.status(404).json({error:"Account not found"});
+    const item={
+        id:crypto.randomUUID(),
+        name:String(req.body?.name||"VOID Playlist").slice(0,80),
+        owner:{id:user.id,name:user.name},
+        songs:Array.isArray(req.body?.songs)?req.body.songs.slice(0,500):[],
+        updatedAt:new Date()
+    };
+    await PublicPlaylist.create(item);
+    res.json({playlist:item});
+});
 
-// Optional Google OAuth integration: set GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET and add a provider.
-app.get("/api/auth/providers", (req,res)=>res.json({google:Boolean(process.env.GOOGLE_CLIENT_ID),email:true}));
-const googleStates = new Map();
-app.get("/api/auth/google", (req,res)=>{
-  if(!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) return res.status(503).send("Google sign-in is not configured. Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI.");
-  const state=crypto.randomBytes(24).toString("hex"); googleStates.set(state,Date.now()+300000);
-  const redirect=process.env.GOOGLE_REDIRECT_URI || `${req.protocol}://${req.get("host")}/api/auth/google/callback`;
-  const u=new URL("https://accounts.google.com/o/oauth2/v2/auth"); u.searchParams.set("client_id",process.env.GOOGLE_CLIENT_ID);u.searchParams.set("redirect_uri",redirect);u.searchParams.set("response_type","code");u.searchParams.set("scope","openid email profile");u.searchParams.set("state",state); res.redirect(u.toString());
-});
-app.get("/api/auth/google/callback", async (req,res)=>{
- try{
-  const state=String(req.query.state||""); if(!googleStates.has(state)||googleStates.get(state)<Date.now()) return res.status(400).send("Google sign-in state expired."); googleStates.delete(state);
-  const redirect=process.env.GOOGLE_REDIRECT_URI || `${req.protocol}://${req.get("host")}/api/auth/google/callback`;
-  const body=new URLSearchParams({code:String(req.query.code||""),client_id:process.env.GOOGLE_CLIENT_ID,client_secret:process.env.GOOGLE_CLIENT_SECRET,redirect_uri:redirect,grant_type:"authorization_code"});
-  const tokenRes=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body}); const tokens=await tokenRes.json(); if(!tokenRes.ok) throw new Error(tokens.error_description||"Google token exchange failed");
-  const infoRes=await fetch(`https://openidconnect.googleapis.com/v1/userinfo?access_token=${encodeURIComponent(tokens.access_token)}`); const info=await infoRes.json(); if(!infoRes.ok||!info.email) throw new Error("Google profile could not be read");
-  const users=readUsers(); let user=users.find(x=>normalizeEmail(x.email)===normalizeEmail(info.email)); if(!user){user={id:crypto.randomUUID(),name:info.name||info.email.split("@")[0],email:normalizeEmail(info.email),salt:crypto.randomBytes(16).toString("hex"),hash:crypto.randomBytes(64).toString("hex"),createdAt:new Date().toISOString(),googleId:info.sub};users.push(user)} else {user.googleId=info.sub;user.name=info.name||user.name;}
-  writeUsers(users); setSessionCookie(res,createSession(user)); res.redirect("/");
- }catch(e){console.error("Google OAuth error",e);res.status(500).send("Google sign-in failed. Check OAuth settings.");}
-});
+// Google OAuth disabled: authentication uses email/password only.
 
 // YouTube search
 app.get("/api/search", requireAuth, async (req, res) => {
@@ -498,10 +776,26 @@ app.get("/api/search", requireAuth, async (req, res) => {
 app.use(requireAuth, express.static(publicDir));
 
 // Start server
-app.listen(PORT, "0.0.0.0", () => {
-    console.log("\n================================");
-    console.log("       VOID MUSIC PLAYER");
-    console.log("================================");
-    console.log(`Server running on port ${PORT}`);
-    console.log("================================\n");
+async function startServer() {
+    const connected = await connectMongoForCache();
+    if (!connected) {
+        console.error("MONGODB is required. Set MONGO_URI (or MONGODB_URI) in your environment.");
+        process.exit(1);
+    }
+
+    await migrateLegacyJsonToMongo();
+
+    app.listen(PORT, "0.0.0.0", () => {
+        console.log("\n================================");
+        console.log("       VOID MUSIC PLAYER");
+        console.log("================================");
+        console.log(`Server running on port ${PORT}`);
+        console.log("MongoDB persistence: ENABLED");
+        console.log("================================\n");
+    });
+}
+
+startServer().catch((error) => {
+    console.error("Startup failed:", error);
+    process.exit(1);
 });

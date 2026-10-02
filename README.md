@@ -65,3 +65,67 @@ npm start
 ```
 
 The cache is shared across all users of this server because it lives in MongoDB. If `MONGO_URI` is not configured or MongoDB is temporarily unavailable, VOID falls back to the normal YouTube API path rather than crashing.
+
+
+## MongoDB persistence (updated build)
+
+This version uses MongoDB as the persistent source of truth.
+
+Stored in MongoDB:
+- User accounts / credentials metadata
+- Favorites
+- Queue
+- Listening history
+- Search history
+- Playlists
+- Player settings (including remembered volume)
+- Profile data and avatar
+- Last played song
+- Registered devices
+- Public playlists
+- YouTube search cache
+
+The browser no longer writes player/library/profile data to `localStorage`.
+If an existing browser has the old `voidFavorites`, `voidQueue`, `voidRecent`,
+`voidPlaylists`, `voidSearchHistory`, `voidSettings`, `voidVolume`, or profile
+image keys, the first logged-in load imports them into MongoDB and then removes
+the legacy browser keys.
+
+### Render environment variables
+
+Set these in Render → Service → Environment:
+
+```text
+MONGO_URI=mongodb+srv://...
+MONGO_DB_NAME=void_music
+YOUTUBE_API_KEY=...
+```
+
+Optional Google OAuth variables remain:
+
+```text
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=https://YOUR-RENDER-DOMAIN/api/auth/google/callback
+```
+
+On the first startup after this update, `data/users.json` and
+`data/public-playlists.json` are imported into MongoDB and then removed from
+the running filesystem. After migration, the application does not read or
+write those JSON files.
+
+### MongoDB collections
+
+The app creates/uses:
+- `users`
+- `userLibraries`
+- `publicPlaylists`
+- `youtubeSearchCache`
+
+Each user's library is isolated by `userId`, so favorites/queue/history/
+playlists/settings cannot leak between accounts.
+
+### Important
+
+Do not remove your MongoDB database when redeploying. Render's filesystem is
+ephemeral; MongoDB is what keeps user data across deploys and restarts.

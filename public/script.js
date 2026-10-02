@@ -113,12 +113,15 @@ let searchHistory = load("voidSearchHistory", []);
 let playlists = load("voidPlaylists", {});
 let cloudReady = false;
 let cloudSyncTimer = null;
+let currentUser = null;
+let profileData = { bio: "", avatar: "", publicProfile: false };
 let settings = Object.assign(
   { theme: "dark", autoplayQueue: true, rememberVolume: true },
   load("voidSettings", {}),
 );
 
 function load(key, fallback) {
+  // Legacy read-only import path. New writes NEVER go to localStorage.
   try {
     return JSON.parse(localStorage.getItem(key)) ?? fallback;
   } catch {
@@ -126,8 +129,11 @@ function load(key, fallback) {
   }
 }
 function save(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
-  if (cloudReady && ["voidFavorites","voidQueue","voidRecent","voidPlaylists","voidSearchHistory","voidSettings"].includes(key)) scheduleCloudSync();
+  // MongoDB is the only persistent store. Keep this function so existing
+  // player actions remain simple, but do not write anything to localStorage.
+  if (cloudReady && ["voidFavorites","voidQueue","voidRecent","voidPlaylists","voidSearchHistory","voidSettings"].includes(key)) {
+    scheduleCloudSync();
+  }
 }
 function scheduleCloudSync(){
   clearTimeout(cloudSyncTimer);
@@ -136,36 +142,104 @@ function scheduleCloudSync(){
 async function syncCloudLibrary(){
   if(!cloudReady) return;
   try{
-    await fetch("/api/library",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({library:{favorites,queue,recent,playlists,searchHistory,settings,lastPlayed:currentSong?{...normalizeSong(currentSong),savedAt:Date.now()}:null}})});
-  }catch(e){ console.warn("VOID cloud sync failed",e); }
+    await fetch("/api/library",{
+      method:"PUT",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        library:{
+          favorites, queue, recent, playlists, searchHistory, settings,
+          profile: profileData,
+          lastPlayed: currentSong ? {...normalizeSong(currentSong),savedAt:Date.now()} : null
+        }
+      })
+    });
+  }catch(e){ console.warn("VOID MongoDB sync failed",e); }
+}
+function clearLegacyBrowserData() {
+  [
+    "voidFavorites","voidQueue","voidRecent","voidPlaylists","voidSearchHistory",
+    "voidSettings","voidVolume","voidUser"
+  ].forEach(k => localStorage.removeItem(k));
+  if (currentUser?.id) localStorage.removeItem(`voidProfileImage:${currentUser.id}`);
 }
 async function loadCloudLibrary(){
   try{
     const r=await fetch("/api/library"); if(!r.ok) return;
     const d=await r.json(); const c=d.library||{};
-    const local={favorites,queue,recent,playlists,searchHistory,settings};
-    const cloudHas= (c.favorites?.length||c.queue?.length||c.recent?.length||Object.keys(c.playlists||{}).length||c.searchHistory?.length);
-    if(!cloudHas && (local.favorites.length||local.queue.length||local.recent.length||Object.keys(local.playlists).length||local.searchHistory.length)){
-      cloudReady=true; await syncCloudLibrary(); return;
+
+    // One-time migration for users of the old localStorage build.
+    const legacy = {
+      favorites: load("voidFavorites", []),
+      queue: load("voidQueue", []),
+      recent: load("voidRecent", []),
+      playlists: load("voidPlaylists", {}),
+      searchHistory: load("voidSearchHistory", []),
+      settings: load("voidSettings", {}),
+      profile: {
+        ...profileData,
+        avatar: currentUser?.id
+          ? (localStorage.getItem(`voidProfileImage:${currentUser.id}`) || "")
+          : ""
+      }
+    };
+    const cloudHas = Boolean(
+      c.favorites?.length ||
+      c.queue?.length ||
+      c.recent?.length ||
+      Object.keys(c.playlists || {}).length ||
+      c.searchHistory?.length ||
+      c.lastPlayed ||
+      c.profile?.avatar ||
+      c.profile?.bio
+    );
+    const legacyHas = Boolean(
+      legacy.favorites.length ||
+      legacy.queue.length ||
+      legacy.recent.length ||
+      Object.keys(legacy.playlists).length ||
+      legacy.searchHistory.length ||
+      Object.keys(legacy.settings || {}).length > 0 ||
+      legacy.profile.avatar
+    );
+
+    if(!cloudHas && legacyHas){
+      favorites=legacy.favorites;
+      queue=legacy.queue;
+      recent=legacy.recent;
+      playlists=legacy.playlists;
+      searchHistory=legacy.searchHistory;
+      settings=Object.assign(settings, legacy.settings || {});
+      profileData=Object.assign(profileData, legacy.profile || {});
+      cloudReady=true;
+      await syncCloudLibrary();
+      clearLegacyBrowserData();
+      return;
     }
-    favorites=Array.isArray(c.favorites)?c.favorites:[]; queue=Array.isArray(c.queue)?c.queue:[]; recent=Array.isArray(c.recent)?c.recent:[]; playlists=c.playlists&&typeof c.playlists==='object'?c.playlists:{}; searchHistory=Array.isArray(c.searchHistory)?c.searchHistory:[]; settings=Object.assign(settings,c.settings||{});
-    save("voidFavorites",favorites); save("voidQueue",queue); save("voidRecent",recent); save("voidPlaylists",playlists); save("voidSearchHistory",searchHistory); save("voidSettings",settings);
+
+    favorites=Array.isArray(c.favorites)?c.favorites:[];
+    queue=Array.isArray(c.queue)?c.queue:[];
+    recent=Array.isArray(c.recent)?c.recent:[];
+    playlists=c.playlists&&typeof c.playlists==='object'?c.playlists:{};
+    searchHistory=Array.isArray(c.searchHistory)?c.searchHistory:[];
+    settings=Object.assign(settings,c.settings||{});
+    profileData=Object.assign(profileData,c.profile||{});
     cloudReady=true;
+    clearLegacyBrowserData();
     updateBadges(); renderQueue(); renderFavorites(); renderRecent(); renderQueuePage(); renderPlaylists(); initSettings();
-  }catch(e){ console.warn("VOID cloud library unavailable",e); cloudReady=true; }
+  }catch(e){ console.warn("VOID MongoDB library unavailable",e); cloudReady=true; }
 }
 
 function userInitial(name = "P") {
   return name.trim().split(/\s+/)[0]?.charAt(0).toUpperCase() || "P";
 }
-function updateProfileUI(user) {
+function updateProfileUI(user, profile = profileData) {
   if (!user) return;
   const initial = userInitial(user.name || user.email);
   profileInitial.textContent = initial;
   profileAvatarLarge.textContent = initial;
   profileName.textContent = user.name || user.email.split("@")[0];
   profileEmail.textContent = user.email;
-  const image = localStorage.getItem(`voidProfileImage:${user.id}`);
+  const image = profile?.avatar || "";
   [profileInitial, profileAvatarLarge].forEach((el) => {
     el.style.backgroundImage = image ? `url("${image}")` : "";
     el.classList.toggle("has-image", Boolean(image));
@@ -176,12 +250,13 @@ async function loadProfile() {
     const response = await fetch("/api/auth/me");
     if (!response.ok) return;
     const data = await response.json();
-    localStorage.setItem("voidUser", JSON.stringify(data.user));
-    updateProfileUI(data.user);
+    currentUser = data.user;
+    updateProfileUI(currentUser);
     await loadCloudLibrary();
+    updateProfileUI(currentUser, profileData);
     registerDevice();
   } catch {
-    try { updateProfileUI(JSON.parse(localStorage.getItem("voidUser"))); } catch {}
+    console.warn("VOID profile could not be loaded");
   }
 }
 function escapeHTML(v) {
@@ -378,7 +453,7 @@ window.onYouTubeIframeAPIReady = function () {
 function handlePlayerReady(event) {
   playerReady = true;
   const saved = settings.rememberVolume
-    ? Number(localStorage.getItem("voidVolume") || 80)
+    ? Number(settings.volume ?? 80)
     : 80;
   volume.value = saved;
   previousVolume = saved;
@@ -860,7 +935,10 @@ volume.addEventListener("input", () => {
     player.setVolume(v);
   }
   isMuted = v === 0;
-  if (settings.rememberVolume) localStorage.setItem("voidVolume", v);
+  if (settings.rememberVolume) {
+    settings.volume = v;
+    save("voidSettings", settings);
+}
   updateMuteIcon();
 });
 muteButton.addEventListener("click", () => {
@@ -893,7 +971,10 @@ function changeVolume(amount) {
   }
   isMuted = v === 0;
   if (v > 0) previousVolume = v;
-  if (settings.rememberVolume) localStorage.setItem("voidVolume", v);
+  if (settings.rememberVolume) {
+    settings.volume = v;
+    save("voidSettings", settings);
+}
   updateMuteIcon();
 }
 
@@ -1489,16 +1570,28 @@ $("profileButton").addEventListener("click", (event) => {
 });
 avatarInput.addEventListener("change", () => {
   const file = avatarInput.files?.[0];
-  let user;
-  try {
-    user = JSON.parse(localStorage.getItem("voidUser"));
-  } catch {}
-  if (!file || !user) return;
+  if (!file || !currentUser) return;
+  if (file.size > 350000) {
+    showToast("Profile image is too large");
+    return;
+  }
   const reader = new FileReader();
-  reader.onload = () => {
-    localStorage.setItem(`voidProfileImage:${user.id}`, reader.result);
-    updateProfileUI(user);
-    showToast("Profile picture updated");
+  reader.onload = async () => {
+    try {
+      const avatar = String(reader.result || "");
+      const r = await fetch("/api/profile", {
+        method:"PATCH",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({...profileData, avatar})
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Upload failed");
+      profileData = d.profile || {...profileData, avatar};
+      updateProfileUI(currentUser, profileData);
+      showToast("Profile picture updated");
+    } catch {
+      showToast("Could not update profile picture");
+    }
   };
   reader.readAsDataURL(file);
 });
@@ -1509,17 +1602,16 @@ document.addEventListener("click", (event) => {
     $("profileButton").setAttribute("aria-expanded", "false");
   }
 });
-$("resetAppButton").addEventListener("click", () => {
-  if (!confirm("Reset all local VOID data?")) return;
-  [
-    "voidFavorites",
-    "voidQueue",
-    "voidRecent",
-    "voidPlaylists",
-    "voidSettings",
-    "voidVolume",
-  ].forEach((k) => localStorage.removeItem(k));
-  location.reload();
+$("resetAppButton").addEventListener("click", async () => {
+  if (!confirm("Reset your VOID Music library from MongoDB? This will clear favorites, queue, history, playlists and settings.")) return;
+  try {
+    const r = await fetch("/api/library/reset", {method:"POST"});
+    if (!r.ok) throw new Error();
+    clearLegacyBrowserData();
+    location.reload();
+  } catch {
+    showToast("Could not reset your MongoDB library");
+  }
 });
 
 function openContextMenu(song, x, y) {
@@ -1588,7 +1680,18 @@ document.addEventListener("keydown", (e) => {
 
 
 async function registerDevice(){
-  try{ const id=localStorage.getItem("voidDeviceId")||crypto.randomUUID(); localStorage.setItem("voidDeviceId",id); await fetch("/api/devices",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,name:navigator.userAgent.includes("Mobile")?"VOID Mobile":"VOID Web",platform:navigator.platform})}); }catch{}
+  try{
+    if (!currentUser) return;
+    const raw = `${currentUser.id}|${navigator.platform}|${navigator.userAgent.includes("Mobile") ? "mobile" : "web"}`;
+    const bytes = new TextEncoder().encode(raw);
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    const id = "device-" + [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2,"0")).join("").slice(0,24);
+    await fetch("/api/devices",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id,name:navigator.userAgent.includes("Mobile")?"VOID Mobile":"VOID Web",platform:navigator.platform})
+    });
+  }catch{}
 }
 window.VOID={playSong,playCollection,toggleFavorite,addToQueue,openAddToPlaylist,searchSongs,openNowPlaying,openLyrics,showToast,getState:()=>({currentSong,favorites,queue,recent,playlists,settings})};
 
