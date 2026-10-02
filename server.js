@@ -188,6 +188,61 @@ const dataDir = path.join(__dirname, "data");
 const usersFile = path.join(dataDir, "users.json");
 const sessions = new Map();
 
+// ===================== AUTH HELPERS =====================
+// Keep password handling server-side. New passwords use PBKDF2-SHA512 with
+// 210,000 iterations. The verifier also accepts the common legacy variants
+// used by earlier VOID builds and transparently upgrades them after login.
+const PASSWORD_ITERATIONS = 210000;
+
+function normalizeEmail(value = "") {
+    return String(value).trim().toLowerCase();
+}
+
+function hashPassword(password, saltHex = crypto.randomBytes(16).toString("hex")) {
+    const salt = Buffer.from(saltHex, "hex");
+    const hash = crypto.pbkdf2Sync(String(password), salt, PASSWORD_ITERATIONS, 64, "sha512");
+    return { salt: saltHex, hash: hash.toString("hex"), algorithm: `pbkdf2-sha512-${PASSWORD_ITERATIONS}` };
+}
+
+function safeEqualHex(a, b) {
+    try {
+        const left = Buffer.from(String(a || ""), "hex");
+        const right = Buffer.from(String(b || ""), "hex");
+        return left.length === right.length && left.length > 0 && crypto.timingSafeEqual(left, right);
+    } catch {
+        return false;
+    }
+}
+
+function passwordsMatch(password, user) {
+    if (!user?.salt || !user?.hash) return false;
+    const salt = Buffer.from(String(user.salt), "hex");
+    const expected = String(user.hash).toLowerCase();
+    const algorithms = [];
+
+    // Current format.
+    algorithms.push(() => crypto.pbkdf2Sync(String(password), salt, PASSWORD_ITERATIONS, 64, "sha512"));
+
+    // Legacy VOID builds commonly used these PBKDF2 settings. Trying these
+    // only against the stored hash lets existing accounts continue to work.
+    for (const iterations of [100000, 120000, 150000]) {
+        algorithms.push(() => crypto.pbkdf2Sync(String(password), salt, iterations, 64, "sha512"));
+    }
+    algorithms.push(() => crypto.pbkdf2Sync(String(password), salt, 100000, 64, "sha256"));
+
+    for (const derive of algorithms) {
+        if (safeEqualHex(derive().toString("hex"), expected)) return true;
+    }
+
+    // A few older builds used scrypt with the same 16-byte hex salt.
+    try {
+        const derived = crypto.scryptSync(String(password), salt, 64);
+        if (safeEqualHex(derived.toString("hex"), expected)) return true;
+    } catch {}
+
+    return false;
+}
+
 app.use(express.json({ limit: "1mb" }));
 
 
@@ -211,6 +266,7 @@ const UserSchema = new mongoose.Schema({
     email: { type: String, required: true, unique: true, lowercase: true, index: true },
     salt: { type: String, required: true },
     hash: { type: String, required: true },
+    hashAlgorithm: { type: String, default: `pbkdf2-sha512-${PASSWORD_ITERATIONS}` },
     googleId: { type: String, index: true, sparse: true },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
@@ -421,7 +477,7 @@ app.post("/api/auth/register", async (req, res) => {
 
         const credentials = hashPassword(password);
         const user = await User.create({
-            id: crypto.randomUUID(), name, email, ...credentials, createdAt: new Date()
+            id: crypto.randomUUID(), name, email, ...credentials, hashAlgorithm: credentials.algorithm, createdAt: new Date()
         });
         await getUserLibrary(user.id, true);
 
@@ -442,10 +498,11 @@ app.post("/api/auth/login", async (req, res) => {
         if (!user || !passwordsMatch(password, user))
             return res.status(401).json({ error: "Email or password is incorrect." });
 
-        if (!user.salt || !user.hash) {
+        if (user.hashAlgorithm !== `pbkdf2-sha512-${PASSWORD_ITERATIONS}`) {
             const credentials = hashPassword(password);
             user.salt = credentials.salt;
             user.hash = credentials.hash;
+            user.hashAlgorithm = credentials.algorithm;
             user.updatedAt = new Date();
             await user.save();
         }
