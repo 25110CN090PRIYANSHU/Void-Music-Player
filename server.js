@@ -182,100 +182,7 @@ async function youtubeSearchWithCache(query, apiKey, options = {}) {
 
 
 const app = express();
-app.disable("x-powered-by");
-app.set("trust proxy", 1);
 const PORT = process.env.PORT || 3000;
-
-// ===================== SECURITY HARDENING =====================
-// Keep private/auth responses out of intermediary/browser caches.
-app.use((req, res, next) => {
-    if (req.path.startsWith("/api/") || req.path === "/" || req.path === "/index.html") {
-        res.setHeader("Cache-Control", "no-store, max-age=0");
-        res.setHeader("Pragma", "no-cache");
-    }
-    // Baseline security headers. CSP is intentionally omitted here because the
-    // player loads YouTube's iframe API and existing inline UI behavior.
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("X-Frame-Options", "SAMEORIGIN");
-    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-    if (req.secure || req.headers["x-forwarded-proto"] === "https") {
-        res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-    }
-    next();
-});
-
-// SameSite cookies are the primary CSRF defense. Also reject cross-origin
-// state-changing browser requests when an Origin header is supplied.
-app.use((req, res, next) => {
-    if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
-        const origin = req.get("origin");
-        if (origin) {
-            const expected = `${req.protocol}://${req.get("host")}`;
-            if (origin !== expected) {
-                return res.status(403).json({ error: "Cross-origin request blocked." });
-            }
-        }
-    }
-    next();
-});
-
-// Small in-memory rate limiter. This is intentionally conservative and works
-// on a single Render instance; use a shared store for multi-instance scaling.
-const rateBuckets = new Map();
-function rateLimit({ windowMs, max, keyFn, message = "Too many requests. Please try again later." }) {
-    return (req, res, next) => {
-        const key = keyFn(req);
-        const now = Date.now();
-        let bucket = rateBuckets.get(key);
-        if (!bucket || bucket.resetAt <= now) {
-            bucket = { count: 0, resetAt: now + windowMs };
-            rateBuckets.set(key, bucket);
-        }
-        bucket.count += 1;
-        res.setHeader("RateLimit-Limit", String(max));
-        res.setHeader("RateLimit-Remaining", String(Math.max(0, max - bucket.count)));
-        if (bucket.count > max) {
-            res.setHeader("Retry-After", String(Math.ceil((bucket.resetAt - now) / 1000)));
-            return res.status(429).json({ error: message });
-        }
-        next();
-    };
-}
-
-// Prevent unbounded growth from stale limiter keys.
-setInterval(() => {
-    const now = Date.now();
-    for (const [key, bucket] of rateBuckets) {
-        if (bucket.resetAt <= now) rateBuckets.delete(key);
-    }
-}, 10 * 60 * 1000).unref();
-
-const authRateLimit = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 10,
-    keyFn: req => `auth:${req.ip}:${normalizeEmail(req.body?.email || "")}`,
-    message: "Too many login attempts. Please wait 15 minutes."
-});
-const registerRateLimit = rateLimit({
-    windowMs: 60 * 60 * 1000,
-    max: 5,
-    keyFn: req => `register:${req.ip}`,
-    message: "Too many registration attempts. Please try again later."
-});
-const searchRateLimit = rateLimit({
-    windowMs: 60 * 1000,
-    max: 60,
-    keyFn: req => `search:${req.ip}:${sessionFromRequest(req)?.id || "anonymous"}`,
-    message: "Too many searches. Please slow down."
-});
-const writeRateLimit = rateLimit({
-    windowMs: 60 * 1000,
-    max: 30,
-    keyFn: req => `write:${req.ip}:${sessionFromRequest(req)?.id || "anonymous"}`,
-    message: "Too many requests. Please slow down."
-});
-
 const publicDir = path.join(__dirname, "public");
 const dataDir = path.join(__dirname, "data");
 const usersFile = path.join(dataDir, "users.json");
@@ -408,43 +315,17 @@ function defaultLibrary() {
     };
 }
 
-function clampArray(value, max) {
-    return Array.isArray(value) ? value.slice(0, max) : [];
-}
-
 function normalizeLibrary(value = {}) {
     const base = defaultLibrary();
-    const rawSettings = value.settings && typeof value.settings === "object" ? value.settings : {};
-    const rawProfile = value.profile && typeof value.profile === "object" ? value.profile : {};
-    const rawPlaylists = value.playlists && typeof value.playlists === "object" && !Array.isArray(value.playlists)
-        ? value.playlists : {};
-
-    const playlists = {};
-    for (const [name, songs] of Object.entries(rawPlaylists).slice(0, 100)) {
-        const safeName = String(name).slice(0, 80);
-        playlists[safeName] = clampArray(songs, 500);
-    }
-
     return {
-        favorites: clampArray(value.favorites, 1000),
-        queue: clampArray(value.queue, 500),
-        recent: clampArray(value.recent, 2000),
-        playlists,
-        searchHistory: clampArray(value.searchHistory, 500),
-        settings: {
-            theme: rawSettings.theme === "light" ? "light" : "dark",
-            autoplayQueue: Boolean(rawSettings.autoplayQueue),
-            rememberVolume: Boolean(rawSettings.rememberVolume),
-            volume: Math.min(100, Math.max(0, Number(rawSettings.volume) || 0)),
-            crossfade: [0, 2, 5, 10].includes(Number(rawSettings.crossfade)) ? Number(rawSettings.crossfade) : 0,
-            sleepTimer: Math.min(24 * 60 * 60, Math.max(0, Number(rawSettings.sleepTimer) || 0))
-        },
-        profile: {
-            bio: String(rawProfile.bio || "").slice(0, 240),
-            avatar: String(rawProfile.avatar || "").slice(0, 500000),
-            publicProfile: Boolean(rawProfile.publicProfile)
-        },
-        lastPlayed: value.lastPlayed && typeof value.lastPlayed === "object" ? value.lastPlayed : null
+        favorites: Array.isArray(value.favorites) ? value.favorites : base.favorites,
+        queue: Array.isArray(value.queue) ? value.queue : base.queue,
+        recent: Array.isArray(value.recent) ? value.recent : base.recent,
+        playlists: value.playlists && typeof value.playlists === "object" && !Array.isArray(value.playlists) ? value.playlists : base.playlists,
+        searchHistory: Array.isArray(value.searchHistory) ? value.searchHistory : base.searchHistory,
+        settings: { ...base.settings, ...(value.settings || {}) },
+        profile: { ...base.profile, ...(value.profile || {}) },
+        lastPlayed: value.lastPlayed ?? null
     };
 }
 
@@ -550,7 +431,7 @@ function createSession(user) {
 }
 
 function setSessionCookie(res, token) {
-    res.setHeader("Set-Cookie", `void_session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800`);
+    res.setHeader("Set-Cookie", `void_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800`);
 }
 
 function sessionFromRequest(req) {
@@ -580,7 +461,7 @@ app.get("/login.html", (req, res) => res.sendFile(path.join(publicDir, "login.ht
 app.get("/auth.css", (req, res) => res.sendFile(path.join(publicDir, "auth.css")));
 app.get("/auth.js", (req, res) => res.sendFile(path.join(publicDir, "auth.js")));
 
-app.post("/api/auth/register", registerRateLimit, async (req, res) => {
+app.post("/api/auth/register", async (req, res) => {
     try {
         const email = normalizeEmail(req.body.email);
         const name = String(req.body.name || "").trim();
@@ -609,7 +490,7 @@ app.post("/api/auth/register", registerRateLimit, async (req, res) => {
     }
 });
 
-app.post("/api/auth/login", authRateLimit, async (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
     try {
         const email = normalizeEmail(req.body.email);
         const password = String(req.body.password || "");
@@ -681,7 +562,7 @@ app.get("/api/library", requireAuth, async (req, res) => {
     }
 });
 
-app.put("/api/library", requireAuth, writeRateLimit, async (req, res) => {
+app.put("/api/library", requireAuth, async (req, res) => {
     try {
         const incoming = req.body?.library || {};
         const library = normalizeLibrary(incoming);
@@ -697,7 +578,7 @@ app.put("/api/library", requireAuth, writeRateLimit, async (req, res) => {
     }
 });
 
-app.post("/api/library/reset", requireAuth, writeRateLimit, async (req, res) => {
+app.post("/api/library/reset", requireAuth, async (req, res) => {
     try {
         const library = defaultLibrary();
         await UserLibrary.findOneAndUpdate(
@@ -712,7 +593,7 @@ app.post("/api/library/reset", requireAuth, writeRateLimit, async (req, res) => 
     }
 });
 
-app.patch("/api/profile", requireAuth, writeRateLimit, async (req, res) => {
+app.patch("/api/profile", requireAuth, async (req, res) => {
     try {
         const doc = await getUserLibrary(req.user.id, true);
         const profile = {
@@ -721,12 +602,6 @@ app.patch("/api/profile", requireAuth, writeRateLimit, async (req, res) => {
             avatar: String(req.body?.avatar || "").slice(0, 500000),
             publicProfile: Boolean(req.body?.publicProfile)
         };
-        if (profile.avatar && !/^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(profile.avatar)) {
-            return res.status(400).json({ error: "Invalid profile image format." });
-        }
-        if (profile.avatar.length > 480000) {
-            return res.status(400).json({ error: "Profile image is too large." });
-        }
         await UserLibrary.updateOne({ userId: req.user.id }, { $set: { profile, updatedAt: new Date() } });
         res.json({ profile });
     } catch (error) {
@@ -741,16 +616,16 @@ app.get("/api/profile/:id", async (req, res) => {
         if (!user) return res.status(404).json({ error: "Profile not found" });
         const doc = await getUserLibrary(user.id, true);
         const library = normalizeLibrary(doc.toObject ? doc.toObject() : doc);
-        if (!library.profile.publicProfile) {
-            return res.status(403).json({ error: "This profile is private." });
-        }
         res.json({
             id: user.id,
             name: user.name,
+            email: user.email,
             bio: library.profile.bio,
             avatar: library.profile.avatar,
-            publicProfile: true,
-            playlists: Object.entries(library.playlists).map(([name, songs]) => ({ name, songs }))
+            publicProfile: library.profile.publicProfile,
+            playlists: library.profile.publicProfile
+                ? Object.entries(library.playlists).map(([name, songs]) => ({ name, songs }))
+                : []
         });
     } catch (error) {
         console.error("Profile read error:", error);
@@ -785,7 +660,7 @@ app.get("/api/stats", requireAuth, async (req, res) => {
     }
 });
 
-app.post("/api/devices", requireAuth, writeRateLimit, async (req, res) => {
+app.post("/api/devices", requireAuth, async (req, res) => {
     try {
         const device = {
             id: String(req.body?.id || crypto.randomUUID()),
@@ -810,7 +685,7 @@ app.get("/api/devices", requireAuth, async (req, res) => {
     res.json({ devices: user?.devices || [] });
 });
 
-app.delete("/api/devices/:id", requireAuth, writeRateLimit, async (req, res) => {
+app.delete("/api/devices/:id", requireAuth, async (req, res) => {
     try {
         const user = await User.findOne({ id: req.user.id });
         if (!user) return res.status(404).json({ error: "Account not found" });
@@ -914,7 +789,7 @@ app.get("/api/public-playlists", async (req,res)=>{
     const playlists = await PublicPlaylist.find({}).sort({ updatedAt: -1 }).limit(100).lean();
     res.json({ playlists: playlists.map(x => ({ id:x.id,name:x.name,owner:x.owner,updatedAt:x.updatedAt,songs:x.songs })) });
 });
-app.post("/api/public-playlists", requireAuth, writeRateLimit, async (req,res)=>{
+app.post("/api/public-playlists", requireAuth, async (req,res)=>{
     const user = await User.findOne({ id: req.user.id }).lean();
     if (!user) return res.status(404).json({error:"Account not found"});
     const item={
@@ -931,7 +806,7 @@ app.post("/api/public-playlists", requireAuth, writeRateLimit, async (req,res)=>
 // Google OAuth disabled: authentication uses email/password only.
 
 // YouTube search
-app.get("/api/search", requireAuth, searchRateLimit, async (req, res) => {
+app.get("/api/search", requireAuth, async (req, res) => {
     try {
         const query = String(req.query.q || "").trim();
         if (!query) return res.status(400).json({ error: "Search query is required" });
