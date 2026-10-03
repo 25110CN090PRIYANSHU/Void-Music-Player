@@ -40,6 +40,8 @@ const favoriteButton = $("favoriteButton"),
   nowPlaying = $("nowPlaying");
 const queueOpenButton = $("queueOpenButton"),
   fullscreenPlayerButton = $("fullscreenPlayerButton"),
+  equalizerButton = $("equalizerButton"),
+  sleepTimerButton = $("sleepTimerButton"),
   playerMoreButton = $("playerMoreButton");
 
 const queuePanel = $("queuePanel"),
@@ -60,7 +62,11 @@ const modalPlay = $("modalPlay"),
   modalNext = $("modalNext"),
   modalShuffle = $("modalShuffle"),
   modalRepeat = $("modalRepeat");
-const lyricsModal = $("lyricsModal"),
+const equalizerModal = $("equalizerModal"),
+  sleepTimerModal = $("sleepTimerModal"),
+  eqPresets = $("eqPresets"),
+  sleepTimerStatus = $("sleepTimerStatus"),
+  lyricsModal = $("lyricsModal"),
   lyricsTitle = $("lyricsTitle"),
   lyricsText = $("lyricsText");
 const contextMenu = $("contextMenu"),
@@ -103,6 +109,11 @@ let endedSongId = null;
 let autoplayWatchdog = null;
 let autoplayTransitioning = false;
 let autoplayGeneration = 0;
+let sleepTimerId = null;
+let sleepTimerMode = "off";
+let sleepTimerEndsAt = 0;
+let visualizerFrame = null;
+let touchStartY = 0;
 let activePage = "home";
 let activeCollection = "search";
 let activeContextSong = null;
@@ -116,7 +127,7 @@ let cloudSyncTimer = null;
 let currentUser = null;
 let profileData = { bio: "", avatar: "", publicProfile: false };
 let settings = Object.assign(
-  { theme: "dark", autoplayQueue: true, rememberVolume: true },
+  { theme: "dark", autoplayQueue: true, rememberVolume: true, eqPreset: "flat" },
   load("voidSettings", {}),
 );
 
@@ -586,6 +597,13 @@ function handlePlayerState(event) {
       stopProgressUpdater();
       break;
     case YT.PlayerState.ENDED:
+      if (sleepTimerMode === "end") {
+        clearSleepTimer(false);
+        setPlayingUI(false);
+        stopProgressUpdater();
+        showToast("Sleep timer ended playback");
+        break;
+      }
       setPlayingUI(false);
       stopProgressUpdater();
       progress.value = 0;
@@ -610,6 +628,7 @@ function setPlayingUI(playing) {
     b.classList.toggle("active", repeatMode !== "off"),
   );
   updateMediaSession();
+  updateVisualizerState();
 }
 
 function updateMediaSession() {
@@ -881,6 +900,9 @@ function nextFromQueue() {
 }
 
 setupMediaSession();
+const playerFooter = document.querySelector("footer.player");
+playerFooter?.addEventListener("touchstart", e => { touchStartY = e.changedTouches[0].clientY; }, {passive:true});
+playerFooter?.addEventListener("touchend", e => { const dy = e.changedTouches[0].clientY - touchStartY; if (dy < -60) openPlayerModal(); }, {passive:true});
 
 // Do not pause playback when the player page is minimized/backgrounded.
 // The YouTube iframe remains the actual audio source. Media Session gives
@@ -892,6 +914,72 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("pagehide", () => {
   if (isPlaying) updateMediaSession();
 });
+
+
+function openPlayerModal() {
+  if (!currentSong) { showToast("Play a song first"); return; }
+  nowPlayingModal.classList.remove("hidden");
+  updateVisualizerState();
+}
+function openEqualizer() {
+  equalizerModal.classList.remove("hidden");
+  const active = settings.eqPreset || "flat";
+  eqPresets?.querySelectorAll("[data-eq]").forEach(b => b.classList.toggle("active", b.dataset.eq === active));
+}
+function openSleepTimer() {
+  sleepTimerModal.classList.remove("hidden");
+  updateSleepTimerStatus();
+}
+function clearSleepTimer(show = true) {
+  if (sleepTimerId) clearTimeout(sleepTimerId);
+  sleepTimerId = null; sleepTimerMode = "off"; sleepTimerEndsAt = 0;
+  if (show) showToast("Sleep timer off");
+  updateSleepTimerStatus();
+}
+function updateSleepTimerStatus() {
+  if (!sleepTimerStatus) return;
+  if (sleepTimerMode === "end") { sleepTimerStatus.textContent = "Playback will stop after this song."; return; }
+  if (!sleepTimerEndsAt) { sleepTimerStatus.textContent = "No timer active."; return; }
+  const mins = Math.max(0, Math.ceil((sleepTimerEndsAt - Date.now()) / 60000));
+  sleepTimerStatus.textContent = `Stops in about ${mins} minute${mins === 1 ? "" : "s"}.`;
+}
+function setSleepTimer(mode) {
+  clearSleepTimer(false);
+  if (mode === "off") { showToast("Sleep timer off"); return; }
+  if (mode === "end") { sleepTimerMode = "end"; showToast("Stops after this song"); updateSleepTimerStatus(); return; }
+  const mins = Number(mode);
+  if (!Number.isFinite(mins) || mins <= 0) return;
+  sleepTimerMode = "time";
+  sleepTimerEndsAt = Date.now() + mins * 60000;
+  sleepTimerId = setTimeout(() => {
+    sleepTimerId = null; sleepTimerMode = "off"; sleepTimerEndsAt = 0;
+    try { player?.pauseVideo(); } catch {}
+    setPlayingUI(false); updateSleepTimerStatus(); showToast("Sleep timer ended playback");
+  }, mins * 60000);
+  updateSleepTimerStatus(); showToast(`Sleep timer: ${mins} min`);
+}
+function updateVisualizerState() {
+  const bars = document.querySelectorAll("#visualizer i");
+  if (!bars.length) return;
+  if (visualizerFrame) cancelAnimationFrame(visualizerFrame);
+  if (!isPlaying) { bars.forEach(b => b.style.height = "12%"); return; }
+  const tick = () => {
+    if (!isPlaying) { bars.forEach(b => b.style.height = "12%"); visualizerFrame = null; return; }
+    bars.forEach((b, i) => {
+      const wave = 18 + Math.abs(Math.sin(performance.now()/170 + i * 0.8)) * 68 + Math.abs(Math.sin(performance.now()/83 + i)) * 14;
+      b.style.height = `${Math.min(100, wave)}%`;
+    });
+    visualizerFrame = requestAnimationFrame(tick);
+  };
+  visualizerFrame = requestAnimationFrame(tick);
+}
+function setEqualizerPreset(preset) {
+  const allowed = ["flat","bass","vocal","rock","pop"];
+  if (!allowed.includes(preset)) return;
+  settings.eqPreset = preset; save("voidSettings", settings);
+  eqPresets?.querySelectorAll("[data-eq]").forEach(b => b.classList.toggle("active", b.dataset.eq === preset));
+  showToast(`EQ preset: ${preset === "bass" ? "Bass Boost" : preset[0].toUpperCase()+preset.slice(1)}`);
+}
 
 playButton.addEventListener("click", () => {
   if (!playerReady) return;
@@ -910,6 +998,21 @@ modalNext.addEventListener("click", nextSong);
 modalPrev.addEventListener("click", previousSong);
 modalShuffle.addEventListener("click", toggleShuffle);
 modalRepeat.addEventListener("click", cycleRepeat);
+fullscreenPlayerButton?.addEventListener("click", openPlayerModal);
+nowPlaying?.addEventListener("click", (e) => {
+  if (e.target.closest("button")) return;
+  openPlayerModal();
+});
+equalizerButton?.addEventListener("click", openEqualizer);
+sleepTimerButton?.addEventListener("click", openSleepTimer);
+$("modalEqualizerButton")?.addEventListener("click", openEqualizer);
+$("modalSleepTimerButton")?.addEventListener("click", openSleepTimer);
+eqPresets?.addEventListener("click", e => { const b=e.target.closest("[data-eq]"); if(b) setEqualizerPreset(b.dataset.eq); });
+document.querySelectorAll("[data-sleep]").forEach(b => b.addEventListener("click", () => { setSleepTimer(b.dataset.sleep); sleepTimerModal.classList.add("hidden"); }));
+setInterval(updateSleepTimerStatus, 30000);
+nowPlayingModal?.addEventListener("touchstart", e => { touchStartY = e.changedTouches[0].clientY; }, {passive:true});
+nowPlayingModal?.addEventListener("touchend", e => { const dy = e.changedTouches[0].clientY - touchStartY; if (dy > 80) nowPlayingModal.classList.add("hidden"); }, {passive:true});
+
 function toggleShuffle() {
   isShuffle = !isShuffle;
   setPlayingUI(isPlaying);

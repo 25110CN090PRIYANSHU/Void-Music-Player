@@ -351,6 +351,8 @@
         </button>
         <button id="muteButton" class="volume-button" title="Mute">🔊</button>
         <input id="volume" type="range" min="0" max="100" value="80" />
+        <button id="equalizerButton" class="volume-button" title="Equalizer">EQ</button>
+        <button id="sleepTimerButton" class="volume-button" title="Sleep timer">⏱</button>
         <button
           id="fullscreenPlayerButton"
           class="volume-button"
@@ -408,8 +410,10 @@
           ><button id="modalNext">⏭</button><button id="modalRepeat">↻</button>
         </div>
         <div class="modal-links">
-          <button id="lyricsButton">♪ Lyrics</button
-          ><button id="modalQueueButton">♫ Queue</button>
+          <button id="lyricsButton">♪ Lyrics</button>
+          <button id="modalQueueButton">♫ Queue</button>
+          <button id="modalEqualizerButton">EQ</button>
+          <button id="modalSleepTimerButton">⏱ Timer</button>
         </div>
       </div>
     </div>
@@ -424,6 +428,36 @@
           Lyrics are not fetched automatically by VOID. Use the YouTube video or
           a licensed lyrics source for the current song.
         </p>
+      </div>
+    </div>
+
+    <div id="equalizerModal" class="modal hidden">
+      <div class="modal-backdrop" data-close-modal></div>
+      <div class="form-modal equalizer-modal">
+        <button class="modal-close" data-close-modal>×</button>
+        <span class="section-label">AUDIO</span>
+        <h2>Equalizer</h2>
+        <p class="eq-note">Preset controls are saved to your account. YouTube iframe playback does not expose its audio stream to Web Audio, so these presets cannot alter the embedded YouTube audio itself.</p>
+        <div class="eq-presets" id="eqPresets">
+          <button data-eq="flat" class="eq-preset active">Flat</button>
+          <button data-eq="bass" class="eq-preset">Bass Boost</button>
+          <button data-eq="vocal" class="eq-preset">Vocal</button>
+          <button data-eq="rock" class="eq-preset">Rock</button>
+          <button data-eq="pop" class="eq-preset">Pop</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="sleepTimerModal" class="modal hidden">
+      <div class="modal-backdrop" data-close-modal></div>
+      <div class="form-modal sleep-modal">
+        <button class="modal-close" data-close-modal>×</button>
+        <span class="section-label">PLAYBACK</span>
+        <h2>Sleep timer</h2>
+        <div class="sleep-options">
+          <button data-sleep="15">15 min</button><button data-sleep="30">30 min</button><button data-sleep="60">60 min</button><button data-sleep="end">End of song</button><button data-sleep="off" class="sleep-off">Turn off</button>
+        </div>
+        <p id="sleepTimerStatus" class="eq-note">No timer active.</p>
       </div>
     </div>
 
